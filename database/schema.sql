@@ -1,95 +1,78 @@
--- Create menus table
-CREATE TABLE menus (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    is_active BOOLEAN DEFAULT true,
-    restaurant_id UUID REFERENCES auth.users(id),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
-);
-
--- Create categories table
-CREATE TABLE categories (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    menu_id UUID REFERENCES menus(id) ON DELETE CASCADE,
-    display_order INTEGER DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
-);
-
 -- Create menu_items table
-CREATE TABLE menu_items (
+CREATE TABLE IF NOT EXISTS menu_items (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
+    name VARCHAR NOT NULL,
     price DECIMAL(10,2) NOT NULL,
-    category_id UUID REFERENCES categories(id) ON DELETE CASCADE,
-    image_url TEXT,
-    is_available BOOLEAN DEFAULT true,
-    display_order INTEGER DEFAULT 0,
-    allergens TEXT[],
-    dietary_info TEXT[],
+    description TEXT,
+    category_id UUID,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+    updated_at TIMESTAMP WITH TIME ZONE
 );
 
--- Create RLS (Row Level Security) policies
-ALTER TABLE menus ENABLE ROW LEVEL SECURITY;
-ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
+-- Create orders table with foreign key to menu_items
+CREATE TABLE IF NOT EXISTS orders (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    menu_item_id UUID NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Create customers table
+CREATE TABLE IF NOT EXISTS customers (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Add some sample menu items
+INSERT INTO menu_items (name, price, description) VALUES
+('Margherita Pizza', 12.99, 'Classic tomato sauce and mozzarella'),
+('Pepperoni Pizza', 14.99, 'Margherita with pepperoni'),
+('Caesar Salad', 8.99, 'Romaine lettuce with Caesar dressing'),
+('Chicken Wings', 10.99, 'Spicy buffalo wings'),
+('Cheeseburger', 11.99, 'Beef patty with cheese and fries'),
+('Fish & Chips', 13.99, 'Battered cod with fries'),
+('Pasta Carbonara', 15.99, 'Creamy pasta with bacon'),
+('Greek Salad', 9.99, 'Mixed greens with feta cheese'),
+('Steak Sandwich', 16.99, 'Grilled steak with onions'),
+('Veggie Burger', 12.99, 'Plant-based patty with fries');
+
+-- Add some sample customers
+INSERT INTO customers (created_at) VALUES
+(NOW() - INTERVAL '30 days'),
+(NOW() - INTERVAL '25 days'),
+(NOW() - INTERVAL '20 days'),
+(NOW() - INTERVAL '15 days'),
+(NOW() - INTERVAL '10 days'),
+(NOW() - INTERVAL '5 days'),
+(NOW() - INTERVAL '3 days'),
+(NOW() - INTERVAL '2 days'),
+(NOW() - INTERVAL '1 day'),
+(NOW());
+
+-- Add some sample orders
+WITH menu_item_ids AS (
+  SELECT id FROM menu_items
+)
+INSERT INTO orders (menu_item_id, quantity, created_at)
+SELECT 
+  id,
+  FLOOR(RANDOM() * 5 + 1)::INTEGER,
+  NOW() - (RANDOM() * INTERVAL '30 days')
+FROM menu_item_ids, generate_series(1, 50);
+
+-- Create RLS policies
 ALTER TABLE menu_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
 
--- Create policy to allow users to see only their own menus
-CREATE POLICY "Users can view own menus" ON menus
-    FOR ALL
-    USING (auth.uid() = restaurant_id);
+-- Allow read access to all authenticated users
+CREATE POLICY "Allow read access to menu_items" ON menu_items
+  FOR SELECT TO authenticated USING (true);
 
--- Create policy to allow users to see categories of their own menus
-CREATE POLICY "Users can view own categories" ON categories
-    FOR ALL
-    USING (
-        EXISTS (
-            SELECT 1 FROM menus
-            WHERE menus.id = categories.menu_id
-            AND menus.restaurant_id = auth.uid()
-        )
-    );
+CREATE POLICY "Allow read access to orders" ON orders
+  FOR SELECT TO authenticated USING (true);
 
--- Create policy to allow users to see menu items of their own categories
-CREATE POLICY "Users can view own menu items" ON menu_items
-    FOR ALL
-    USING (
-        EXISTS (
-            SELECT 1 FROM categories
-            JOIN menus ON categories.menu_id = menus.id
-            WHERE categories.id = menu_items.category_id
-            AND menus.restaurant_id = auth.uid()
-        )
-    );
-
--- Create function to update updated_at timestamp
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = TIMEZONE('utc'::text, NOW());
-    RETURN NEW;
-END;
-$$ language 'plpgsql';
-
--- Create triggers for updated_at
-CREATE TRIGGER update_menus_updated_at
-    BEFORE UPDATE ON menus
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_categories_updated_at
-    BEFORE UPDATE ON categories
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_menu_items_updated_at
-    BEFORE UPDATE ON menu_items
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column(); 
+CREATE POLICY "Allow read access to customers" ON customers
+  FOR SELECT TO authenticated USING (true); 

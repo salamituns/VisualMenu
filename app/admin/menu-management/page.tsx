@@ -13,6 +13,7 @@ import { getMenus, createMenu, updateMenu, deleteMenu, getCategories, createCate
 import type { Menu, Category, MenuItem } from '@/types/database'
 import { supabase } from '@/lib/supabase'
 import { optimizeImage, generateThumbnail } from '@/lib/image-utils'
+import { OCRImport } from '@/components/menu/ocr-import'
 
 export default function MenuManagementPage() {
   const [menus, setMenus] = useState<Menu[]>([])
@@ -421,6 +422,17 @@ export default function MenuManagementPage() {
               </form>
             </CardContent>
           </Card>
+        )}
+
+        {selectedMenu && (
+          <div className="mt-4">
+            <OCRImport 
+              menuId={selectedMenu} 
+              onComplete={() => {
+                loadCategories(selectedMenu)
+              }} 
+            />
+          </div>
         )}
       </div>
 
