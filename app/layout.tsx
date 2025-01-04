@@ -5,8 +5,8 @@ import { Inter } from 'next/font/google'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'MenuViz - Transform Your Restaurant Menu',
-  description: 'MenuViz helps restaurants create engaging, visual menu experiences that enhance customer satisfaction and streamline ordering processes.',
+  title: 'MenuViz',
+  description: 'Transform your restaurant menu into an interactive digital experience.',
 }
 
 export default function RootLayout({
