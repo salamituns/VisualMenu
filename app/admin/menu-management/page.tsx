@@ -12,6 +12,7 @@ import { Plus, Edit, Trash2, Upload } from 'lucide-react'
 import { getMenus, createMenu, updateMenu, deleteMenu, getCategories, createCategory, updateCategory, deleteCategory, getMenuItems, createMenuItem, updateMenuItem, deleteMenuItem } from '@/lib/db'
 import type { Menu, Category, MenuItem } from '@/types/database'
 import { supabase } from '@/lib/supabase'
+import { optimizeImage, generateThumbnail } from '@/lib/image-utils'
 
 export default function MenuManagementPage() {
   const [menus, setMenus] = useState<Menu[]>([])
@@ -116,6 +117,12 @@ export default function MenuManagementPage() {
     try {
       const data = await getCategories(menuId)
       setCategories(data)
+      
+      // Load all menu items for this menu to get accurate counts
+      const allItems = await Promise.all(
+        data.map(category => getMenuItems(category.id))
+      )
+      setMenuItems(allItems.flat())
     } catch (err) {
       console.error('Error loading categories:', err)
       setError('Failed to load categories')
@@ -267,46 +274,60 @@ export default function MenuManagementPage() {
         throw new Error('Please upload an image file')
       }
 
-      // Validate file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        throw new Error('Image size should be less than 5MB')
+      // Validate file size (max 10MB for original upload)
+      if (file.size > 10 * 1024 * 1024) {
+        throw new Error('Image size should be less than 10MB')
       }
 
       // Create a preview
       const objectUrl = URL.createObjectURL(file)
       setPreviewImage(objectUrl)
 
-      // Upload to Supabase Storage
-      const fileExt = file.name.split('.').pop()
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
-      
-      console.log('Attempting to upload file:', {
-        fileName,
-        fileType: file.type,
-        fileSize: file.size
+      // Convert file to buffer
+      const buffer = Buffer.from(await file.arrayBuffer())
+
+      // Optimize image
+      const optimized = await optimizeImage(buffer, {
+        maxWidth: 1200,
+        maxHeight: 1200,
+        quality: 80,
+        format: 'webp'
       })
 
-      const { data, error: uploadError } = await supabase.storage
+      // Generate thumbnail
+      const thumbnail = await generateThumbnail(buffer)
+
+      // Upload to Supabase Storage
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}`
+      
+      console.log('Uploading optimized image and thumbnail...')
+
+      // Upload optimized image
+      const { error: mainUploadError } = await supabase.storage
         .from('menu-images')
-        .upload(`${fileName}`, file, {
-          cacheControl: '3600',
-          upsert: false,
-          contentType: file.type
+        .upload(`${fileName}.webp`, optimized.data, {
+          contentType: 'image/webp',
+          cacheControl: '3600'
         })
 
-      if (uploadError) {
-        console.error('Supabase upload error:', uploadError)
-        throw new Error(uploadError.message)
-      }
+      if (mainUploadError) throw mainUploadError
 
-      console.log('Upload successful:', data)
+      // Upload thumbnail
+      const { error: thumbUploadError } = await supabase.storage
+        .from('menu-images')
+        .upload(`${fileName}-thumb.webp`, thumbnail, {
+          contentType: 'image/webp',
+          cacheControl: '3600'
+        })
 
-      // Get the public URL
+      if (thumbUploadError) throw thumbUploadError
+
+      // Get the public URL of the optimized image
       const { data: { publicUrl } } = supabase.storage
         .from('menu-images')
-        .getPublicUrl(fileName)
+        .getPublicUrl(`${fileName}.webp`)
 
-      console.log('Public URL generated:', publicUrl)
+      console.log('Upload successful, public URL:', publicUrl)
 
       // Update form data with the image URL
       setItemFormData(prev => ({
@@ -579,6 +600,7 @@ export default function MenuManagementPage() {
                           <table className="w-full text-sm text-left">
                             <thead className="text-xs uppercase bg-gray-50">
                               <tr>
+                                <th className="px-6 py-3">Image</th>
                                 <th className="px-6 py-3">Item Name</th>
                                 <th className="px-6 py-3">Description</th>
                                 <th className="px-6 py-3">Price</th>
@@ -589,6 +611,21 @@ export default function MenuManagementPage() {
                             <tbody>
                               {menuItems.map((item) => (
                                 <tr key={item.id} className="bg-white border-b">
+                                  <td className="px-6 py-4">
+                                    {item.image_url ? (
+                                      <div className="relative w-20 h-20">
+                                        <img
+                                          src={item.image_url}
+                                          alt={item.name}
+                                          className="w-full h-full object-cover rounded-md"
+                                        />
+                                      </div>
+                                    ) : (
+                                      <div className="w-20 h-20 bg-gray-100 rounded-md flex items-center justify-center">
+                                        <span className="text-gray-400 text-sm">No image</span>
+                                      </div>
+                                    )}
+                                  </td>
                                   <td className="px-6 py-4">{item.name}</td>
                                   <td className="px-6 py-4">{item.description || '-'}</td>
                                   <td className="px-6 py-4">${item.price.toFixed(2)}</td>
@@ -707,6 +744,7 @@ export default function MenuManagementPage() {
                           <tr>
                             <th className="px-6 py-3">Category Name</th>
                             <th className="px-6 py-3">Description</th>
+                            <th className="px-6 py-3">Items Count</th>
                             <th className="px-6 py-3">Actions</th>
                           </tr>
                         </thead>
@@ -715,6 +753,13 @@ export default function MenuManagementPage() {
                             <tr key={category.id} className="bg-white border-b">
                               <td className="px-6 py-4">{category.name}</td>
                               <td className="px-6 py-4">{category.description || '-'}</td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center">
+                                  <span className="bg-gray-100 text-gray-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
+                                    {menuItems.filter(item => item.category_id === category.id).length} items
+                                  </span>
+                                </div>
+                              </td>
                               <td className="px-6 py-4">
                                 <div className="flex space-x-2">
                                   <Button 
