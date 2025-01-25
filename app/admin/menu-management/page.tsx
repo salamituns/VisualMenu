@@ -1,807 +1,563 @@
 "use client"
 
 import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, Edit, Trash2, Upload } from 'lucide-react'
-import { getMenus, createMenu, updateMenu, deleteMenu, getCategories, createCategory, updateCategory, deleteCategory, getMenuItems, createMenuItem, updateMenuItem, deleteMenuItem } from '@/lib/db'
-import type { Menu, Category, MenuItem } from '@/types/database'
-import { supabase } from '@/lib/supabase'
-import { optimizeImage, generateThumbnail } from '@/lib/image-utils'
-import { OCRImport } from '@/components/menu/ocr-import'
+import { Textarea } from "@/components/ui/textarea"
+import { Plus, Pencil, Trash2, Save } from 'lucide-react'
+
+interface MenuItem {
+  id: string;
+  name: string;
+  description: string;
+  price: string;
+  category: string;
+  image_url: string | null;
+  dietary_info: string[];
+  is_available: boolean;
+  special_offer: Record<string, any> | null;
+}
+
+interface DatabaseMenuItem {
+  id: string;
+  name: string;
+  description: string | null;
+  price: number;
+  category: string;
+  image_url: string | null;
+  dietary_info: string[] | null;
+  is_available: boolean;
+  special_offer: Record<string, any> | null;
+}
+
+interface FormData {
+  name: string;
+  description: string;
+  price: string;
+  category: string;
+  image_url: string | null;
+  dietary_info: string[];
+  is_available: boolean;
+  special_offer: Record<string, any> | null;
+}
 
 export default function MenuManagementPage() {
-  const [menus, setMenus] = useState<Menu[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
-  const [selectedMenu, setSelectedMenu] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [showNewMenuForm, setShowNewMenuForm] = useState(false)
-  const [newMenuName, setNewMenuName] = useState('')
-  const [showNewCategoryForm, setShowNewCategoryForm] = useState(false)
-  const [editingCategory, setEditingCategory] = useState<Category | null>(null)
-  const [categoryFormData, setCategoryFormData] = useState({
-    name: '',
-    description: ''
-  })
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
-  const [showNewItemForm, setShowNewItemForm] = useState(false)
-  const [editingItem, setEditingItem] = useState<MenuItem | null>(null)
-  const [itemFormData, setItemFormData] = useState({
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [newItem, setNewItem] = useState(false)
+  const [categories, setCategories] = useState<string[]>([])
+  const [selectedImage, setSelectedImage] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string>('')
+  const [formData, setFormData] = useState<FormData>({
     name: '',
     description: '',
     price: '',
+    category: '',
+    image_url: null,
+    dietary_info: [],
     is_available: true,
-    image_url: '',
-    allergens: [] as string[],
-    dietary_info: [] as string[]
+    special_offer: null
   })
-  const [uploadingImage, setUploadingImage] = useState(false)
-  const [previewImage, setPreviewImage] = useState<string | null>(null)
+
+  const supabase = createClient()
 
   useEffect(() => {
-    loadMenus()
+    loadMenuItems()
   }, [])
 
   useEffect(() => {
-    if (selectedMenu) {
-      loadCategories(selectedMenu)
-    }
-  }, [selectedMenu])
+    // Extract unique categories when menu items change
+    const uniqueCategories = Array.from(new Set(menuItems.map(item => item.category)))
+    setCategories(uniqueCategories)
+  }, [menuItems])
 
-  useEffect(() => {
-    if (editingCategory) {
-      setCategoryFormData({
-        name: editingCategory.name,
-        description: editingCategory.description || ''
-      })
-    } else {
-      setCategoryFormData({
-        name: '',
-        description: ''
-      })
-    }
-  }, [editingCategory])
-
-  useEffect(() => {
-    if (selectedCategory) {
-      loadMenuItems(selectedCategory)
-    }
-  }, [selectedCategory])
-
-  useEffect(() => {
-    if (editingItem) {
-      setItemFormData({
-        name: editingItem.name,
-        description: editingItem.description || '',
-        price: editingItem.price.toString(),
-        is_available: editingItem.is_available,
-        image_url: editingItem.image_url || '',
-        allergens: editingItem.allergens || [],
-        dietary_info: editingItem.dietary_info || []
-      })
-    } else {
-      setItemFormData({
-        name: '',
-        description: '',
-        price: '',
-        is_available: true,
-        image_url: '',
-        allergens: [],
-        dietary_info: []
-      })
-    }
-  }, [editingItem])
-
-  async function loadMenus() {
+  const loadMenuItems = async () => {
     try {
-      const data = await getMenus()
-      setMenus(data)
-      if (data.length > 0 && !selectedMenu) {
-        setSelectedMenu(data[0].id)
+      const { data, error } = await supabase
+        .from('menu_items')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error loading menu items:', error);
+        throw error;
       }
+
+      // First cast to unknown, then to DatabaseMenuItem[]
+      const dbItems = data as unknown as DatabaseMenuItem[];
+      const validatedData: MenuItem[] = dbItems.map(item => ({
+        id: item.id,
+        name: item.name,
+        description: item.description || '',
+        price: item.price.toString(),
+        category: item.category,
+        image_url: item.image_url,
+        dietary_info: item.dietary_info || [],
+        is_available: item.is_available,
+        special_offer: item.special_offer
+      }));
+      setMenuItems(validatedData);
     } catch (err) {
-      console.error('Error loading menus:', err)
-      setError('Failed to load menus')
+      console.error('Error loading menu items:', err);
+      setError('Failed to load menu items');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
-  async function loadCategories(menuId: string) {
+  const BUCKET_NAME = 'menu-uploads';
+
+  const handleImageUpload = async (file: File) => {
     try {
-      const data = await getCategories(menuId)
-      setCategories(data)
+      console.log('Starting image upload process...');
+      const uniqueId = Math.random().toString(36).substring(2);
+      const timestamp = Date.now();
+      const fileName = `${uniqueId}-${timestamp}-${file.name}`;
+      const filePath = `menu-items/${fileName}`;
       
-      // Load all menu items for this menu to get accurate counts
-      const allItems = await Promise.all(
-        data.map(category => getMenuItems(category.id))
-      )
-      setMenuItems(allItems.flat())
-    } catch (err) {
-      console.error('Error loading categories:', err)
-      setError('Failed to load categories')
-    }
-  }
+      console.log(`Uploading file to ${BUCKET_NAME}/${filePath}`);
+      const { data, error } = await supabase.storage
+        .from(BUCKET_NAME)
+        .upload(filePath, file);
 
-  async function handleCreateMenu(e: React.FormEvent) {
-    e.preventDefault()
-    if (!newMenuName.trim()) return
-
-    try {
-      console.log('Creating new menu:', { name: newMenuName.trim() })
-      const newMenu = await createMenu({
-        name: newMenuName.trim(),
-        description: '',
-        is_active: true,
-        restaurant_id: '9c72570d-16d4-4a8c-bb38-55191c0bc4fc'
-      })
-      console.log('Menu created successfully:', newMenu)
-      setMenus([...menus, newMenu])
-      setSelectedMenu(newMenu.id)
-      setNewMenuName('')
-      setShowNewMenuForm(false)
-    } catch (err) {
-      console.error('Detailed error creating menu:', err)
-      setError(err instanceof Error ? err.message : 'Failed to create menu')
-    }
-  }
-
-  async function handleCategorySubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!categoryFormData.name.trim() || !selectedMenu) return
-
-    try {
-      if (editingCategory) {
-        const updatedCategory = await updateCategory(editingCategory.id, {
-          name: categoryFormData.name.trim(),
-          description: categoryFormData.description,
-          menu_id: selectedMenu
-        })
-        setCategories(categories.map(cat => 
-          cat.id === editingCategory.id ? updatedCategory : cat
-        ))
-      } else {
-        const newCategory = await createCategory({
-          name: categoryFormData.name.trim(),
-          description: categoryFormData.description,
-          menu_id: selectedMenu,
-          display_order: categories.length
-        })
-        setCategories([...categories, newCategory])
-      }
-      setShowNewCategoryForm(false)
-      setEditingCategory(null)
-      setCategoryFormData({ name: '', description: '' })
-    } catch (err) {
-      console.error('Error saving category:', err)
-      setError('Failed to save category')
-    }
-  }
-
-  async function handleDeleteCategory(categoryId: string) {
-    if (!confirm('Are you sure you want to delete this category? All menu items in this category will also be deleted.')) return
-
-    try {
-      await deleteCategory(categoryId)
-      setCategories(categories.filter(cat => cat.id !== categoryId))
-    } catch (err) {
-      console.error('Error deleting category:', err)
-      setError('Failed to delete category')
-    }
-  }
-
-  async function loadMenuItems(categoryId: string) {
-    try {
-      const data = await getMenuItems(categoryId)
-      setMenuItems(data)
-    } catch (err) {
-      console.error('Error loading menu items:', err)
-      setError('Failed to load menu items')
-    }
-  }
-
-  async function handleItemSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!itemFormData.name.trim() || !selectedCategory) return
-
-    try {
-      const itemData = {
-        name: itemFormData.name.trim(),
-        description: itemFormData.description,
-        price: parseFloat(itemFormData.price),
-        is_available: itemFormData.is_available,
-        category_id: selectedCategory,
-        image_url: itemFormData.image_url,
-        allergens: itemFormData.allergens,
-        dietary_info: itemFormData.dietary_info,
-        display_order: menuItems.length
+      if (error) {
+        console.error('Upload error:', error);
+        throw error;
       }
 
-      if (editingItem) {
-        const updatedItem = await updateMenuItem(editingItem.id, itemData)
-        setMenuItems(menuItems.map(item => 
-          item.id === editingItem.id ? updatedItem : item
-        ))
-      } else {
-        const newItem = await createMenuItem(itemData)
-        setMenuItems([...menuItems, newItem])
-      }
-      setShowNewItemForm(false)
-      setEditingItem(null)
-      setItemFormData({
-        name: '',
-        description: '',
-        price: '',
-        is_available: true,
-        image_url: '',
-        allergens: [],
-        dietary_info: []
-      })
-    } catch (err) {
-      console.error('Error saving menu item:', err)
-      setError('Failed to save menu item')
+      console.log('Upload successful:', data);
+      const { data: urlData } = await supabase.storage
+        .from(BUCKET_NAME)
+        .getPublicUrl(filePath);
+
+      console.log('Generated public URL:', urlData.publicUrl);
+      return urlData.publicUrl;
+    } catch (err: any) {
+      console.error('Image upload failed:', err.message);
+      throw new Error(`Failed to upload image: ${err.message}`);
     }
-  }
+  };
 
-  async function handleDeleteItem(itemId: string) {
-    if (!confirm('Are you sure you want to delete this menu item?')) return
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedImage(file);
+      const previewUrl = URL.createObjectURL(file);
+      setImagePreview(previewUrl);
+      setFormData(prev => ({ ...prev, image_url: null })); // Clear the previous image URL
+    }
+  };
 
+  const handleSave = async () => {
+    setLoading(true);
     try {
-      await deleteMenuItem(itemId)
-      setMenuItems(menuItems.filter(item => item.id !== itemId))
+      let imageUrl = formData.image_url;
+      if (selectedImage) {
+        imageUrl = await handleImageUpload(selectedImage);
+        console.log('New image URL after upload:', imageUrl);
+      }
+
+      const validatedData = {
+        name: formData.name,
+        description: formData.description,
+        price: parseFloat(formData.price),
+        category: formData.category,
+        image_url: imageUrl,
+        dietary_info: formData.dietary_info || [],
+        is_available: formData.is_available ?? true,
+        special_offer: formData.special_offer || null
+      };
+
+      console.log('Saving menu item with data:', validatedData);
+      const { data: savedData, error } = editingId
+        ? await supabase
+            .from('menu_items')
+            .update(validatedData)
+            .eq('id', editingId)
+            .select()
+        : await supabase
+            .from('menu_items')
+            .insert([validatedData])
+            .select();
+
+      if (error) {
+        console.error('Database error:', error);
+        throw error;
+      }
+
+      console.log('Menu item saved successfully. Response data:', savedData);
+      
+      // Refresh the menu items list to get the latest data
+      await loadMenuItems();
+      
+      handleClose();
+    } catch (err: any) {
+      console.error('Save failed:', err);
+      setError(`Failed to save menu item: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  async function handleDelete(id: string) {
+    try {
+      const { error } = await supabase
+        .from('menu_items')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+
+      loadMenuItems()
     } catch (err) {
       console.error('Error deleting menu item:', err)
       setError('Failed to delete menu item')
     }
   }
 
-  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    try {
-      setUploadingImage(true)
-      setError(null)
-
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        throw new Error('Please upload an image file')
-      }
-
-      // Validate file size (max 10MB for original upload)
-      if (file.size > 10 * 1024 * 1024) {
-        throw new Error('Image size should be less than 10MB')
-      }
-
-      // Create a preview
-      const objectUrl = URL.createObjectURL(file)
-      setPreviewImage(objectUrl)
-
-      // Convert file to buffer
-      const buffer = Buffer.from(await file.arrayBuffer())
-
-      // Optimize image
-      const optimized = await optimizeImage(buffer, {
-        maxWidth: 1200,
-        maxHeight: 1200,
-        quality: 80,
-        format: 'webp'
-      })
-
-      // Generate thumbnail
-      const thumbnail = await generateThumbnail(buffer)
-
-      // Upload to Supabase Storage
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}`
-      
-      console.log('Uploading optimized image and thumbnail...')
-
-      // Upload optimized image
-      const { error: mainUploadError } = await supabase.storage
-        .from('menu-images')
-        .upload(`${fileName}.webp`, optimized.data, {
-          contentType: 'image/webp',
-          cacheControl: '3600'
-        })
-
-      if (mainUploadError) throw mainUploadError
-
-      // Upload thumbnail
-      const { error: thumbUploadError } = await supabase.storage
-        .from('menu-images')
-        .upload(`${fileName}-thumb.webp`, thumbnail, {
-          contentType: 'image/webp',
-          cacheControl: '3600'
-        })
-
-      if (thumbUploadError) throw thumbUploadError
-
-      // Get the public URL of the optimized image
-      const { data: { publicUrl } } = supabase.storage
-        .from('menu-images')
-        .getPublicUrl(`${fileName}.webp`)
-
-      console.log('Upload successful, public URL:', publicUrl)
-
-      // Update form data with the image URL
-      setItemFormData(prev => ({
-        ...prev,
-        image_url: publicUrl
-      }))
-    } catch (err) {
-      console.error('Detailed error uploading image:', err)
-      setError(err instanceof Error ? err.message : 'Failed to upload image')
-      // Clean up preview if upload failed
-      if (previewImage) {
-        URL.revokeObjectURL(previewImage)
-        setPreviewImage(null)
-      }
-    } finally {
-      setUploadingImage(false)
-    }
+  function handleEdit(item: MenuItem) {
+    setEditingId(item.id);
+    setNewItem(false);
+    setFormData({
+      name: item.name,
+      description: item.description,
+      price: item.price,
+      category: item.category,
+      image_url: item.image_url,
+      dietary_info: [...item.dietary_info],
+      is_available: item.is_available,
+      special_offer: item.special_offer
+    });
+    setImagePreview('');
   }
 
-  const menuOptions = menus.map(menu => ({
-    value: menu.id,
-    label: menu.name
-  }))
+  const handleClose = () => {
+    setSelectedImage(null);
+    setImagePreview('');
+    setFormData({
+      name: '',
+      description: '',
+      price: '',
+      category: '',
+      image_url: null,
+      dietary_info: [],
+      is_available: true,
+      special_offer: null
+    });
+    setEditingId(null);
+  };
 
   if (loading) {
-    return <div className="p-8">Loading...</div>
-  }
-
-  if (error) {
-    return <div className="p-8 text-red-500">{error}</div>
+    return <div>Loading...</div>
   }
 
   return (
-    <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold">Menu Management</h1>
+    <div className="container mx-auto p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Menu Management</h1>
+        <Button onClick={() => {
+          setNewItem(true)
+          setEditingId(null)
+          setFormData({
+            name: '',
+            description: '',
+            price: '',
+            category: '',
+            image_url: null,
+            dietary_info: [],
+            is_available: true,
+            special_offer: null
+          })
+          setSelectedImage(null)
+          setImagePreview('')
+        }}>
+          <Plus className="h-4 w-4 mr-2" />
+          Add Item
+        </Button>
       </div>
 
-      <div className="mb-6">
-        <div className="flex items-end gap-4">
-          <div className="flex-1">
-            <Label htmlFor="menu-select">Select Menu</Label>
-            <Select value={selectedMenu || ''} onValueChange={setSelectedMenu}>
-              <SelectTrigger id="menu-select">
-                <SelectValue placeholder="Select a menu" />
-              </SelectTrigger>
-              <SelectContent>
-                {menuOptions.map(({ value, label }) => (
-                  <SelectItem key={value} value={value}>{label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <Button onClick={() => setShowNewMenuForm(true)} className="flex items-center gap-2">
-            <Plus className="h-4 w-4" />
-            Create New Menu
-          </Button>
+      {error && (
+        <div className="bg-red-50 text-red-500 p-4 rounded-md mb-6">
+          {error}
         </div>
+      )}
 
-        {showNewMenuForm && (
-          <Card className="mt-4">
+      {(newItem || editingId) && (
+        <Card className="mb-6">
             <CardHeader>
-              <CardTitle>Create New Menu</CardTitle>
-              <CardDescription>Add a new menu to your restaurant</CardDescription>
+            <CardTitle>{editingId ? 'Edit Item' : 'New Item'}</CardTitle>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleCreateMenu} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="menu-name">Menu Name</Label>
+            <form className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="name">Name</Label>
                   <Input
-                    id="menu-name"
-                    value={newMenuName}
-                    onChange={(e) => setNewMenuName(e.target.value)}
-                    placeholder="Enter menu name"
-                    required
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   />
                 </div>
-                <div className="flex gap-2">
-                  <Button type="submit">Create Menu</Button>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={() => {
-                      setShowNewMenuForm(false)
-                      setNewMenuName('')
-                    }}
+                
+                <div>
+                  <Label htmlFor="category">Category</Label>
+                  <select
+                    id="category"
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2"
                   >
-                    Cancel
-                  </Button>
+                    <option value="">Select a category</option>
+                    {categories.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                    <option value="new">+ Add new category</option>
+                  </select>
                 </div>
+
+                {formData.category === 'new' && (
+                  <div>
+                    <Label htmlFor="newCategory">New Category Name</Label>
+                    <Input
+                      id="newCategory"
+                      value={formData.category}
+                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                      placeholder="Enter new category name"
+                    />
+                  </div>
+                )}
+
+                <div>
+                    <Label htmlFor="price">Price</Label>
+                  <Input
+                    id="price"
+                    type="number"
+                    step="0.01"
+                    value={formData.price}
+                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="available">Availability</Label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="available"
+                      checked={formData.is_available}
+                      onChange={(e) => setFormData({ ...formData, is_available: e.target.checked })}
+                      className="rounded border-gray-300"
+                    />
+                    <span>Item is available</span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                  <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="image">Image</Label>
+                <div className="mt-1 flex items-center space-x-4">
+                  {(imagePreview || formData.image_url) && (
+                    <div className="relative w-24 h-24">
+                      <img
+                        src={imagePreview || (formData.image_url || '')}
+                        alt="Preview"
+                        className="rounded-md object-cover w-full h-full"
+                      />
+                    </div>
+                  )}
+                  <Input
+                    id="image"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="dietary">Dietary Information</Label>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-1">
+                  {['Vegetarian', 'Vegan', 'Gluten-Free', 'Dairy-Free', 'Halal', 'Kosher', 'Nut-Free'].map((diet) => (
+                    <label key={diet} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={formData.dietary_info?.includes(diet)}
+                        onChange={(e) => {
+                          const newDietary = e.target.checked
+                            ? [...(formData.dietary_info || []), diet]
+                            : (formData.dietary_info || []).filter(d => d !== diet)
+                          setFormData({ ...formData, dietary_info: newDietary })
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      <span>{diet}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <Label>Special Offer</Label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-1">
+                  <div>
+                    <Label htmlFor="discountPrice">Discount Price</Label>
+                    <Input
+                      id="discountPrice"
+                      type="number"
+                      step="0.01"
+                      value={formData.special_offer?.discount_price || ''}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        special_offer: {
+                          ...formData.special_offer,
+                          discount_price: parseFloat(e.target.value)
+                        }
+                      })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="startDate">Start Date</Label>
+                    <Input
+                      id="startDate"
+                      type="date"
+                      value={formData.special_offer?.start_date || ''}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        special_offer: {
+                          ...formData.special_offer,
+                          start_date: e.target.value
+                        }
+                      })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="endDate">End Date</Label>
+                    <Input
+                      id="endDate"
+                      type="date"
+                      value={formData.special_offer?.end_date || ''}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        special_offer: {
+                          ...formData.special_offer,
+                          end_date: e.target.value
+                        }
+                      })}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setNewItem(false)
+                    setEditingId(null)
+                    setSelectedImage(null)
+                    setImagePreview('')
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button onClick={handleSave}>
+                  <Save className="h-4 w-4 mr-2" />
+                  Save
+                </Button>
+              </div>
               </form>
             </CardContent>
           </Card>
-        )}
-
-        {selectedMenu && (
-          <div className="mt-4">
-            <OCRImport 
-              menuId={selectedMenu} 
-              onComplete={() => {
-                loadCategories(selectedMenu)
-              }} 
-            />
-          </div>
-        )}
-      </div>
-
-      {selectedMenu && (
-        <div className="space-y-4">
-          <Tabs defaultValue="items" className="w-full">
-            <TabsList>
-              <TabsTrigger value="items">Menu Items</TabsTrigger>
-              <TabsTrigger value="categories">Categories</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="items">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <div>
-                    <CardTitle>Menu Items</CardTitle>
-                    <CardDescription>Add, edit, or remove menu items</CardDescription>
-                  </div>
-                  {categories.length > 0 && (
-                    <div className="flex items-center gap-4">
-                      <div className="flex-1 min-w-[200px]">
-                        <Select value={selectedCategory || ''} onValueChange={setSelectedCategory}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a category" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {categories.map((category) => (
-                              <SelectItem key={category.id} value={category.id}>
-                                {category.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {selectedCategory && (
-                        <Button onClick={() => setShowNewItemForm(true)} className="flex items-center gap-2">
-                          <Plus className="h-4 w-4" />
-                          Add Item
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </CardHeader>
-                <CardContent>
-                  {categories.length === 0 ? (
-                    <div className="text-center text-gray-500 py-8">
-                      First, create some categories to organize your menu items
-                    </div>
-                  ) : !selectedCategory ? (
-                    <div className="text-center text-gray-500 py-8">
-                      Select a category to manage its menu items
-                    </div>
-                  ) : (
-                    <>
-                      {(showNewItemForm || editingItem) && (
-                        <div className="mb-6 border rounded-lg p-4">
-                          <form onSubmit={handleItemSubmit} className="space-y-4">
-                            <div className="space-y-2">
-                              <Label htmlFor="item-name">Item Name</Label>
-                              <Input
-                                id="item-name"
-                                value={itemFormData.name}
-                                onChange={(e) => setItemFormData({ ...itemFormData, name: e.target.value })}
-                                placeholder="Enter item name"
-                                required
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="item-description">Description (Optional)</Label>
-                              <Input
-                                id="item-description"
-                                value={itemFormData.description}
-                                onChange={(e) => setItemFormData({ ...itemFormData, description: e.target.value })}
-                                placeholder="Enter item description"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="item-price">Price</Label>
-                              <Input
-                                id="item-price"
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={itemFormData.price}
-                                onChange={(e) => setItemFormData({ ...itemFormData, price: e.target.value })}
-                                placeholder="Enter price"
-                                required
-                              />
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <Switch
-                                id="item-available"
-                                checked={itemFormData.is_available}
-                                onCheckedChange={(checked) => setItemFormData({ ...itemFormData, is_available: checked })}
-                              />
-                              <Label htmlFor="item-available">Available</Label>
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="item-image">Item Image</Label>
-                              <div className="flex flex-col gap-4">
-                                {(previewImage || itemFormData.image_url) && (
-                                  <div className="relative w-40 h-40">
-                                    <img
-                                      src={previewImage || itemFormData.image_url}
-                                      alt="Preview"
-                                      className="w-full h-full object-cover rounded-md"
-                                    />
-                                    <Button
-                                      type="button"
-                                      variant="destructive"
-                                      size="icon"
-                                      className="absolute top-2 right-2"
-                                      onClick={() => {
-                                        setPreviewImage(null)
-                                        setItemFormData(prev => ({ ...prev, image_url: '' }))
-                                      }}
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                )}
-                                <div className="flex items-center gap-4">
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    disabled={uploadingImage}
-                                    onClick={() => document.getElementById('image-upload')?.click()}
-                                    className="flex items-center gap-2"
-                                  >
-                                    <Upload className="h-4 w-4" />
-                                    {uploadingImage ? 'Uploading...' : 'Upload Image'}
-                                  </Button>
-                                  <input
-                                    id="image-upload"
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={handleImageUpload}
-                                    className="hidden"
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex gap-2">
-                              <Button type="submit">
-                                {editingItem ? 'Update' : 'Create'} Item
-                              </Button>
-                              <Button 
-                                type="button" 
-                                variant="outline" 
-                                onClick={() => {
-                                  setShowNewItemForm(false)
-                                  setEditingItem(null)
-                                  setItemFormData({
-                                    name: '',
-                                    description: '',
-                                    price: '',
-                                    is_available: true,
-                                    image_url: '',
-                                    allergens: [],
-                                    dietary_info: []
-                                  })
-                                }}
-                              >
-                                Cancel
-                              </Button>
-                            </div>
-                          </form>
-                        </div>
-                      )}
-
-                      {menuItems.length === 0 ? (
-                        <div className="text-center text-gray-500 py-8">
-                          No items in this category yet. Click the button above to add your first item.
-                        </div>
-                      ) : (
-                        <div className="relative overflow-x-auto">
-                          <table className="w-full text-sm text-left">
-                            <thead className="text-xs uppercase bg-gray-50">
-                              <tr>
-                                <th className="px-6 py-3">Image</th>
-                                <th className="px-6 py-3">Item Name</th>
-                                <th className="px-6 py-3">Description</th>
-                                <th className="px-6 py-3">Price</th>
-                                <th className="px-6 py-3">Available</th>
-                                <th className="px-6 py-3">Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {menuItems.map((item) => (
-                                <tr key={item.id} className="bg-white border-b">
-                                  <td className="px-6 py-4">
-                                    {item.image_url ? (
-                                      <div className="relative w-20 h-20">
-                                        <img
-                                          src={item.image_url}
-                                          alt={item.name}
-                                          className="w-full h-full object-cover rounded-md"
-                                        />
-                                      </div>
-                                    ) : (
-                                      <div className="w-20 h-20 bg-gray-100 rounded-md flex items-center justify-center">
-                                        <span className="text-gray-400 text-sm">No image</span>
-                                      </div>
-                                    )}
-                                  </td>
-                                  <td className="px-6 py-4">{item.name}</td>
-                                  <td className="px-6 py-4">{item.description || '-'}</td>
-                                  <td className="px-6 py-4">${item.price.toFixed(2)}</td>
-                                  <td className="px-6 py-4">
-                                    <Switch
-                                      checked={item.is_available}
-                                      onCheckedChange={async (checked) => {
-                                        try {
-                                          const updatedItem = await updateMenuItem(item.id, {
-                                            ...item,
-                                            is_available: checked
-                                          })
-                                          setMenuItems(menuItems.map(i => 
-                                            i.id === item.id ? updatedItem : i
-                                          ))
-                                        } catch (err) {
-                                          console.error('Error updating item availability:', err)
-                                          setError('Failed to update item availability')
-                                        }
-                                      }}
-                                    />
-                                  </td>
-                                  <td className="px-6 py-4">
-                                    <div className="flex space-x-2">
-                                      <Button 
-                                        variant="outline" 
-                                        size="icon"
-                                        onClick={() => setEditingItem(item)}
-                                      >
-                                        <Edit className="h-4 w-4" />
-                                      </Button>
-                                      <Button 
-                                        variant="outline" 
-                                        size="icon"
-                                        onClick={() => handleDeleteItem(item.id)}
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="categories">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <div>
-                    <CardTitle>Menu Categories</CardTitle>
-                    <CardDescription>Manage your menu categories</CardDescription>
-                  </div>
-                  <Button onClick={() => setShowNewCategoryForm(true)} className="flex items-center gap-2">
-                    <Plus className="h-4 w-4" />
-                    Add Category
-                  </Button>
-                </CardHeader>
-                <CardContent>
-                  {(showNewCategoryForm || editingCategory) && (
-                    <div className="mb-6 border rounded-lg p-4">
-                      <form onSubmit={handleCategorySubmit} className="space-y-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="category-name">Category Name</Label>
-                          <Input
-                            id="category-name"
-                            value={categoryFormData.name}
-                            onChange={(e) => setCategoryFormData({ ...categoryFormData, name: e.target.value })}
-                            placeholder="Enter category name"
-                            required
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="category-description">Description (Optional)</Label>
-                          <Input
-                            id="category-description"
-                            value={categoryFormData.description}
-                            onChange={(e) => setCategoryFormData({ ...categoryFormData, description: e.target.value })}
-                            placeholder="Enter category description"
-                          />
-                        </div>
-                        <div className="flex gap-2">
-                          <Button type="submit">
-                            {editingCategory ? 'Update' : 'Create'} Category
-                          </Button>
-                          <Button 
-                            type="button" 
-                            variant="outline" 
-                            onClick={() => {
-                              setShowNewCategoryForm(false)
-                              setEditingCategory(null)
-                              setCategoryFormData({ name: '', description: '' })
-                            }}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      </form>
-                    </div>
-                  )}
-
-                  {categories.length === 0 ? (
-                    <div className="text-center text-gray-500 py-8">
-                      No categories yet. Click the button above to add your first category.
-                    </div>
-                  ) : (
-                    <div className="relative overflow-x-auto">
-                      <table className="w-full text-sm text-left">
-                        <thead className="text-xs uppercase bg-gray-50">
-                          <tr>
-                            <th className="px-6 py-3">Category Name</th>
-                            <th className="px-6 py-3">Description</th>
-                            <th className="px-6 py-3">Items Count</th>
-                            <th className="px-6 py-3">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {categories.map((category) => (
-                            <tr key={category.id} className="bg-white border-b">
-                              <td className="px-6 py-4">{category.name}</td>
-                              <td className="px-6 py-4">{category.description || '-'}</td>
-                              <td className="px-6 py-4">
-                                <div className="flex items-center">
-                                  <span className="bg-gray-100 text-gray-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
-                                    {menuItems.filter(item => item.category_id === category.id).length} items
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="flex space-x-2">
-                                  <Button 
-                                    variant="outline" 
-                                    size="icon"
-                                    onClick={() => setEditingCategory(category)}
-                                  >
-                                    <Edit className="h-4 w-4" />
-                                  </Button>
-                                  <Button 
-                                    variant="outline" 
-                                    size="icon"
-                                    onClick={() => handleDeleteCategory(category.id)}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
-        </div>
       )}
+
+      <div className="grid gap-6">
+        {categories.map((category) => (
+          <Card key={category}>
+            <CardHeader>
+              <CardTitle>{category}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {menuItems
+                  .filter(item => item.category === category)
+                  .map((item) => (
+                    <Card key={item.id} className="mb-4">
+                      <CardContent className="flex items-start space-x-4 p-4">
+                        {item.image_url && (
+                          <div className="flex-shrink-0">
+                            <img
+                              src={item.image_url}
+                              alt={item.name}
+                              className="w-24 h-24 object-cover rounded-md"
+                              onError={(e) => {
+                                console.error('Image load error:', e);
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <h3 className="text-lg font-semibold">{item.name}</h3>
+                              <p className="text-sm text-gray-500">{item.description}</p>
+                              <p className="mt-1">${parseFloat(item.price).toFixed(2)}</p>
+                              
+                              {item.special_offer?.discount_price && (
+                                <p className="text-sm text-green-600">
+                                  Special: ${parseFloat(item.special_offer.discount_price).toFixed(2)}
+                                </p>
+                              )}
+                              
+                              {item.dietary_info && item.dietary_info.length > 0 && (
+                                <div className="mt-2">
+                                  <p className="text-sm text-gray-600">
+                                    Dietary: {item.dietary_info.join(', ')}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                            
+                            <div className="flex items-center space-x-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleEdit(item)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDelete(item.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
     </div>
   )
 }

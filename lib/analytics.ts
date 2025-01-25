@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/client'
 import { Database } from '@/types/supabase'
+import { Duration } from '@/components/analytics/duration-selector'
 
 export interface AnalyticsData {
   popularItems: {
@@ -33,8 +34,29 @@ export interface AnalyticsData {
   }[]
 }
 
-export async function getAnalyticsData(): Promise<AnalyticsData> {
+function getDurationDate(duration: Duration): Date {
+  const now = new Date()
+  switch (duration) {
+    case '24h':
+      return new Date(now.getTime() - 24 * 60 * 60 * 1000)
+    case '7d':
+      return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    case '30d':
+      return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    case '90d':
+      return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+    case '1y':
+      return new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000)
+    case 'all':
+      return new Date(0) // Beginning of time
+    default:
+      return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000) // Default to 30 days
+  }
+}
+
+export async function getAnalyticsData(duration: Duration = '30d'): Promise<AnalyticsData> {
   const supabase = createClient()
+  const startDate = getDurationDate(duration)
 
   try {
     // Get popular items
@@ -48,15 +70,15 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
           price
         )
       `)
+      .gte('created_at', startDate.toISOString())
       .order('created_at', { ascending: false })
-      .limit(100)
 
     if (popularItemsError) throw popularItemsError
 
     // Get daily order patterns
     const { data: orderPatterns, error: orderPatternsError } = await supabase
       .rpc('get_daily_order_patterns', {
-        days_ago: 30
+        start_date: startDate.toISOString()
       })
 
     if (orderPatternsError) throw orderPatternsError
@@ -65,20 +87,24 @@ export async function getAnalyticsData(): Promise<AnalyticsData> {
     const { data: customerGrowth, error: customerGrowthError } = await supabase
       .from('customers')
       .select('created_at')
-      .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
+      .gte('created_at', startDate.toISOString())
       .order('created_at', { ascending: true })
 
     if (customerGrowthError) throw customerGrowthError
 
     // Get peak hours analysis
     const { data: peakHours, error: peakHoursError } = await supabase
-      .rpc('get_peak_hours')
+      .rpc('get_peak_hours', {
+        start_date: startDate.toISOString()
+      })
 
     if (peakHoursError) throw peakHoursError
 
     // Get category performance
     const { data: categoryPerformance, error: categoryError } = await supabase
-      .rpc('get_category_performance')
+      .rpc('get_category_performance', {
+        start_date: startDate.toISOString()
+      })
 
     if (categoryError) throw categoryError
 

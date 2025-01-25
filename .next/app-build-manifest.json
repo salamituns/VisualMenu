@@ -1,5 +1,27 @@
 {
   "pages": {
+    "/login/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/login/page.js"
+    ],
+    "/layout": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/css/app/layout.css",
+      "static/chunks/app/layout.js"
+    ],
+    "/menu/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/menu/page.js"
+    ],
+    "/menu/layout": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/css/app/menu/layout.css",
+      "static/chunks/app/menu/layout.js"
+    ],
     "/admin/menu-management/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
@@ -10,17 +32,6 @@
       "static/chunks/main-app.js",
       "static/css/app/admin/layout.css",
       "static/chunks/app/admin/layout.js"
-    ],
-    "/layout": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/css/app/layout.css",
-      "static/chunks/app/layout.js"
-    ],
-    "/admin/analytics/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/analytics/page.js"
     ],
     "/admin/page": [
       "static/chunks/webpack.js",

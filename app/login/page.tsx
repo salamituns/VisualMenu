@@ -1,109 +1,91 @@
 'use client'
 
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useAuth } from '@/lib/context/auth-context'
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Navigation } from "@/components/navigation"
-import { supabase } from '@/lib/supabase'
 
 export default function LoginPage() {
-  const router = useRouter()
-  const [isLoading, setIsLoading] = useState(false)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const router = useRouter()
+  const { signIn } = useAuth()
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsLoading(true)
     setError('')
-
-    const formData = new FormData(e.currentTarget)
-    const email = formData.get('email') as string
-    const password = formData.get('password') as string
+    setLoading(true)
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-
-      if (error) {
-        throw error
-      }
-
-      if (data.user) {
-        console.log('Login successful:', data.user)
-        router.push('/admin')
-      }
-    } catch (err: any) {
-      console.error('Login error:', err)
-      setError(err.message || 'Failed to sign in')
+      console.log('Attempting to sign in with:', email)
+      await signIn(email, password)
+      console.log('Sign in successful')
+      router.push('/menu')
+    } catch (err) {
+      console.error('Sign in error:', err)
+      setError('Invalid email or password')
     } finally {
-      setIsLoading(false)
+      setLoading(false)
     }
   }
 
   return (
-    <div className="flex flex-col min-h-screen">
-      <Navigation />
-      <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4 py-12 sm:px-6 lg:px-8">
-        <Card className="w-full max-w-md">
-          <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl font-bold">Login</CardTitle>
-            <CardDescription>
-              Enter your email and password to access your account
-            </CardDescription>
-          </CardHeader>
-          <form onSubmit={handleSubmit}>
-            <CardContent className="space-y-4">
-              {error && (
-                <div className="text-sm text-red-500 dark:text-red-400">
-                  {error}
-                </div>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  name="email"
-                  placeholder="john@example.com"
-                  type="email"
-                  required
-                  disabled={isLoading}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  name="password"
-                  type="password"
-                  required
-                  disabled={isLoading}
-                />
-              </div>
-              <Button className="w-full" type="submit" disabled={isLoading}>
-                {isLoading ? 'Signing in...' : 'Sign In'}
-              </Button>
-            </CardContent>
-          </form>
-          <CardFooter className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-sm text-muted-foreground">
-              <Link className="underline underline-offset-4 hover:text-primary" href="#">
-                Forgot password?
-              </Link>
-            </div>
-            <div className="text-sm text-muted-foreground">
-              Don't have an account?{" "}
-              <Link className="underline underline-offset-4 hover:text-primary" href="/signup">
-                Sign up
-              </Link>
-            </div>
-          </CardFooter>
-        </Card>
+    <div className="flex min-h-screen items-center justify-center bg-gray-100">
+      <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-md">
+        <h1 className="mb-2 text-2xl font-bold">Login</h1>
+        <p className="mb-6 text-gray-600">Enter your email and password to access your account</p>
+
+        {error && (
+          <div className="mb-4 rounded-md bg-red-50 p-4 text-sm text-red-500">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="password">Password</Label>
+            <Input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </div>
+
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={loading}
+          >
+            {loading ? 'Signing in...' : 'Sign In'}
+          </Button>
+        </form>
+
+        <div className="mt-4 flex items-center justify-between">
+          <Link href="/forgot-password" className="text-sm text-blue-500 hover:text-blue-600">
+            Forgot password?
+          </Link>
+          <Link href="/signup" className="text-sm text-blue-500 hover:text-blue-600">
+            Create account
+          </Link>
+        </div>
       </div>
     </div>
   )
