@@ -1,6 +1,7 @@
 {
   "/login/page": "app/login/page.js",
+  "/admin/set-admin/page": "app/admin/set-admin/page.js",
   "/admin/menu-management/page": "app/admin/menu-management/page.js",
-  "/admin/page": "app/admin/page.js",
-  "/menu/page": "app/menu/page.js"
+  "/menu/page": "app/menu/page.js",
+  "/admin/setup-db/page": "app/admin/setup-db/page.js"
 }
