@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/modal"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Settings, Heart } from 'lucide-react'
+import { Settings } from 'lucide-react'
 import { useAuth } from '@/lib/context/auth-context'
 
 const DIETARY_OPTIONS = [
@@ -22,11 +22,15 @@ export function PreferencesDialog() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(false)
+  const [isOpen, setIsOpen] = useState(false)
 
   const handleDietaryToggle = (option: string) => {
-    if (!preferences) return
+    if (!preferences) {
+      updatePreferences({ dietary: [option] })
+      return
+    }
 
-    const current = new Set(preferences.dietary)
+    const current = new Set(preferences.dietary || [])
     if (current.has(option)) {
       current.delete(option)
     } else {
@@ -45,13 +49,14 @@ export function PreferencesDialog() {
         await signIn(email, password)
       }
       setIsSignInOpen(false)
+      setIsOpen(false)
     } catch (error) {
       console.error('Authentication error:', error)
     }
   }
 
   return (
-    <Dialog>
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="icon">
           <Settings className="h-4 w-4" />
@@ -112,7 +117,7 @@ export function PreferencesDialog() {
                   <div key={option} className="flex items-center space-x-2">
                     <Switch
                       id={option}
-                      checked={preferences?.dietary.includes(option)}
+                      checked={preferences?.dietary?.includes(option) || false}
                       onCheckedChange={() => handleDietaryToggle(option)}
                     />
                     <Label htmlFor={option}>{option}</Label>
@@ -126,7 +131,7 @@ export function PreferencesDialog() {
               <div className="flex items-center space-x-2">
                 <Switch
                   id="dark-mode"
-                  checked={preferences?.darkMode}
+                  checked={preferences?.darkMode || false}
                   onCheckedChange={(checked) => updatePreferences({ darkMode: checked })}
                 />
                 <Label htmlFor="dark-mode">Dark Mode</Label>
@@ -136,7 +141,7 @@ export function PreferencesDialog() {
             <div className="space-y-2">
               <h4 className="font-medium">Language</h4>
               <select
-                value={preferences?.language}
+                value={preferences?.language || 'en'}
                 onChange={(e) => updatePreferences({ language: e.target.value })}
                 className="w-full p-2 border rounded"
               >

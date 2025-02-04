@@ -40,6 +40,17 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { SortableMenuItem } from '@/components/menu/sortable-menu-item'
+import Image from 'next/image'
+import { toast } from 'react-hot-toast'
+import dynamic from 'next/dynamic'
+import { useAuth } from '@/lib/context/auth-context'
+import { useRouter } from 'next/navigation'
+
+// Import SortableMenuList with no SSR
+const SortableMenuList = dynamic(
+  () => import('@/components/menu/sortable-menu-list'),
+  { ssr: false }
+)
 
 interface MenuItem {
   id: string;
@@ -78,9 +89,7 @@ interface FormData {
   special_offer: Record<string, any> | null;
 }
 
-interface ImageLoadingState {
-  [key: string]: boolean;
-}
+type ImageLoadingState = 'idle' | 'uploading' | 'success' | 'error';
 
 interface Filters {
   categories: string[];
@@ -99,7 +108,10 @@ interface BatchUpdateData extends Record<string, unknown> {
 }
 
 export default function MenuManagementPage() {
+  const router = useRouter()
+  const { user, loading: authLoading } = useAuth()
   const { hasPermission, loading: permissionLoading } = usePermissions()
+  const [isClient, setIsClient] = useState(false)
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -118,7 +130,7 @@ export default function MenuManagementPage() {
     is_available: true,
     special_offer: null
   })
-  const [imageLoading, setImageLoading] = useState<ImageLoadingState>({})
+  const [imageLoading, setImageLoading] = useState<ImageLoadingState>('idle')
   const [searchQuery, setSearchQuery] = useState('')
   const [filters, setFilters] = useState<Filters>({
     categories: [],
@@ -153,9 +165,24 @@ export default function MenuManagementPage() {
     })
   )
 
+  // Set isClient to true when component mounts
   useEffect(() => {
-    loadMenuItems()
+    setIsClient(true)
   }, [])
+
+  // Check authentication and redirect if needed
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login')
+    }
+  }, [authLoading, user, router])
+
+  // Load menu items only after authentication is confirmed
+  useEffect(() => {
+    if (user && !authLoading) {
+      loadMenuItems()
+    }
+  }, [user, authLoading])
 
   useEffect(() => {
     // Extract unique categories when menu items change
@@ -225,23 +252,37 @@ export default function MenuManagementPage() {
         return;
       }
 
-      console.log('Menu items loaded:', data);
+      console.log('Raw menu items from database:', data);
 
       const dbItems = data as unknown as DatabaseMenuItem[];
-      const validatedData: MenuItem[] = dbItems.map(item => ({
-        id: item.id,
-        name: item.name,
-        description: item.description || '',
-        price: item.price.toString(),
-        category: item.category,
-        image_url: item.image_url,
-        dietary_info: item.dietary_info || [],
-        is_available: item.is_available,
-        special_offer: item.special_offer,
-        order: item.order || 0
-      }));
+      const validatedData: MenuItem[] = dbItems.map(item => {
+        console.log(`Processing item ${item.id}:`, {
+          originalPrice: item.price,
+          originalType: typeof item.price
+        });
+        
+        const menuItem = {
+          id: item.id,
+          name: item.name,
+          description: item.description || '',
+          price: item.price.toString(), // Convert to string
+          category: item.category,
+          image_url: item.image_url,
+          dietary_info: item.dietary_info || [],
+          is_available: item.is_available,
+          special_offer: item.special_offer,
+          order: item.order || 0
+        };
 
-      console.log('Validated menu items:', validatedData);
+        console.log(`Processed item ${item.id}:`, {
+          processedPrice: menuItem.price,
+          processedType: typeof menuItem.price
+        });
+
+        return menuItem;
+      });
+
+      console.log('Final validated menu items:', validatedData);
       setMenuItems(validatedData);
     } catch (err: any) {
       console.error('Error loading menu items:', err);
@@ -252,97 +293,118 @@ export default function MenuManagementPage() {
     }
   };
 
-  const BUCKET_NAME = 'menu-uploads';
+  const PLACEHOLDER_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFNUU3RUIiLz48cGF0aCBkPSJNNDAgNDBINjBNNTAgMzBWNTAiIHN0cm9rZT0iIzlDQTNCOCIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48L3N2Zz4=';
+  const BUCKET_NAME = 'images';
 
-  const handleImageUpload = async (file: File) => {
+  const handleImageUpload = async (file: File): Promise<string | null> => {
     try {
-      console.log('Starting image upload process...');
-      const uniqueId = Math.random().toString(36).substring(2);
-      const timestamp = Date.now();
-      const fileName = `${uniqueId}-${timestamp}-${file.name}`;
-      const filePath = `menu-items/${fileName}`;
+      setImageLoading('uploading');
       
-      console.log(`Uploading file to ${BUCKET_NAME}/${filePath}`);
-      const { data, error } = await supabase.storage
+      // Create a simple file name with timestamp
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      
+      // Upload the file
+      const { error: uploadError } = await supabase.storage
         .from(BUCKET_NAME)
-        .upload(filePath, file);
+        .upload(fileName, file);
 
-      if (error) {
-        console.error('Upload error:', error);
-        throw error;
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        setImageLoading('error');
+        toast.error('Failed to upload image');
+        return null;
       }
 
-      console.log('Upload successful:', data);
-      const { data: urlData } = await supabase.storage
+      // Get the public URL
+      const { data: { publicUrl } } = supabase.storage
         .from(BUCKET_NAME)
-        .getPublicUrl(filePath);
+        .getPublicUrl(fileName);
 
-      console.log('Generated public URL:', urlData.publicUrl);
-      return urlData.publicUrl;
-    } catch (err: any) {
-      console.error('Image upload failed:', err.message);
-      throw new Error(`Failed to upload image: ${err.message}`);
+      setImageLoading('success');
+      return publicUrl;
+    } catch (error) {
+      console.error('Upload error:', error);
+      setImageLoading('error');
+      toast.error('Failed to upload image');
+      return null;
     }
+  };
+
+  // Simple image URL handling
+  const getImageUrl = (url: string | null | undefined): string => {
+    if (!url) return PLACEHOLDER_IMAGE;
+    return url;
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        setError('Please select an image file');
+        return;
+      }
+      
+      // Validate file size (e.g., 5MB limit)
+      if (file.size > 5 * 1024 * 1024) {
+        setError('Image size should be less than 5MB');
+        return;
+      }
+
       setSelectedImage(file);
       const previewUrl = URL.createObjectURL(file);
       setImagePreview(previewUrl);
-      setFormData(prev => ({ ...prev, image_url: null })); // Clear the previous image URL
+      setFormData(prev => ({ ...prev, image_url: null }));
+      
+      // Clean up the object URL when component unmounts
+      return () => URL.revokeObjectURL(previewUrl);
     }
   };
 
   const handleSave = async () => {
-    setLoading(true);
     try {
       let imageUrl = formData.image_url;
+      
       if (selectedImage) {
+        console.log('Uploading new image...');
         imageUrl = await handleImageUpload(selectedImage);
-        console.log('New image URL after upload:', imageUrl);
+        console.log('New image URL:', imageUrl);
       }
 
-      const validatedData = {
+      const itemData = {
         name: formData.name,
-        description: formData.description,
+        description: formData.description || '',
         price: parseFloat(formData.price),
         category: formData.category,
         image_url: imageUrl,
         dietary_info: formData.dietary_info || [],
-        is_available: formData.is_available ?? true,
-        special_offer: formData.special_offer || null
+        is_available: formData.is_available,
+        special_offer: formData.special_offer
       };
 
-      console.log('Saving menu item with data:', validatedData);
-      const { data: savedData, error } = editingId
-        ? await supabase
-            .from('menu_items')
-            .update(validatedData)
-            .eq('id', editingId)
-            .select()
-        : await supabase
-            .from('menu_items')
-            .insert([validatedData])
-            .select();
+      console.log('Saving item with data:', itemData);
 
-      if (error) {
-        console.error('Database error:', error);
-        throw error;
+      if (editingId) {
+        const { error } = await supabase
+          .from('menu_items')
+          .update(itemData)
+          .eq('id', editingId);
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('menu_items')
+          .insert([itemData]);
+
+        if (error) throw error;
       }
 
-      console.log('Menu item saved successfully. Response data:', savedData);
-      
-      // Refresh the menu items list to get the latest data
       await loadMenuItems();
-      
       handleClose();
     } catch (err: any) {
       console.error('Save failed:', err);
-      setError(`Failed to save menu item: ${err.message}`);
-    } finally {
-      setLoading(false);
+      setError(err.message);
     }
   };
 
@@ -505,24 +567,12 @@ export default function MenuManagementPage() {
     }
   }
 
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event;
-    
-    if (!over || active.id === over.id) return;
-
-    const oldIndex = filteredMenuItems.findIndex(item => item.id === active.id);
-    const newIndex = filteredMenuItems.findIndex(item => item.id === over.id);
-    
-    if (oldIndex === -1 || newIndex === -1) return;
-
-    const newItems = arrayMove(filteredMenuItems, oldIndex, newIndex);
-    
-    // Update the order in the database
+  const updateItemsOrder = async (items: MenuItem[]) => {
     try {
       console.log('Updating item order...');
       
       // Create updates with required fields
-      const updates = newItems.map((item, index) => ({
+      const updates = items.map((item, index) => ({
         id: item.id,
         name: item.name,
         description: item.description || '',
@@ -549,18 +599,6 @@ export default function MenuManagementPage() {
       }
 
       console.log('Order update successful:', data);
-
-      // Update the local state with the new order
-      setMenuItems(prevItems => {
-        const updatedItems = [...prevItems];
-        newItems.forEach((item, index) => {
-          const itemIndex = updatedItems.findIndex(i => i.id === item.id);
-          if (itemIndex !== -1) {
-            updatedItems[itemIndex] = { ...updatedItems[itemIndex], order: index + 1 };
-          }
-        });
-        return updatedItems.sort((a, b) => (a.order || 0) - (b.order || 0));
-      });
     } catch (err) {
       console.error('Failed to update item order:', err);
       setError('Failed to update item order');
@@ -568,6 +606,35 @@ export default function MenuManagementPage() {
       loadMenuItems();
     }
   };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = menuItems.findIndex((item) => item.id === active.id);
+      const newIndex = menuItems.findIndex((item) => item.id === over.id);
+
+      const newItems = arrayMove(menuItems, oldIndex, newIndex);
+      setMenuItems(newItems);
+
+      // Update order in database
+      updateItemsOrder(newItems);
+    }
+  };
+
+  // Don't render anything until we're on the client
+  if (!isClient || authLoading || permissionLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  // Redirect if not authenticated
+  if (!user) {
+    return null // Router will handle redirect
+  }
 
   if (error) {
     return (
@@ -999,10 +1066,24 @@ export default function MenuManagementPage() {
                 <div className="mt-1 flex items-center space-x-4">
                   {(imagePreview || formData.image_url) && (
                     <div className="relative w-24 h-24">
-                      <img
-                        src={imagePreview || (formData.image_url || '')}
+                      {imageLoading === 'uploading' && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-md z-10">
+                          <Loader2 className="h-6 w-6 animate-spin text-white" />
+                        </div>
+                      )}
+                      <Image
+                        src={getImageUrl(imagePreview || formData.image_url)}
                         alt="Preview"
+                        width={100}
+                        height={100}
                         className="rounded-md object-cover w-full h-full"
+                        onError={(e) => {
+                          console.error('Image load error:', imagePreview || formData.image_url);
+                          const target = e.target as HTMLImageElement;
+                          target.src = PLACEHOLDER_IMAGE;
+                        }}
+                        unoptimized={!!(imagePreview || formData.image_url)?.startsWith('data:')}
+                        priority={true}
                       />
                     </div>
                   )}
@@ -1207,70 +1288,21 @@ export default function MenuManagementPage() {
       )}
 
       {/* Menu Items Section */}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext
+      <div className="mt-6">
+        <SortableMenuList
           items={filteredMenuItems}
-          strategy={viewMode === 'grid' ? rectSortingStrategy : verticalListSortingStrategy}
-        >
-          <div className={cn(
-            viewMode === 'grid' 
-              ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-              : "space-y-4"
-          )}>
-            {loading ? (
-              viewMode === 'grid' ? (
-                Array(6).fill(0).map((_, i) => (
-                  <Card key={i} className="overflow-hidden">
-                    <div className="relative aspect-video">
-                      <Skeleton className="absolute inset-0" />
-                    </div>
-                    <CardContent className="p-4">
-                      <Skeleton className="h-4 w-3/4 mb-2" />
-                      <Skeleton className="h-4 w-1/2" />
-            </CardContent>
-          </Card>
-                ))
-              ) : (
-                Array(6).fill(0).map((_, i) => (
-                  <Card key={i} className="overflow-hidden">
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-4">
-                        <Skeleton className="h-16 w-16 rounded" />
-                        <div className="flex-1">
-                          <Skeleton className="h-4 w-1/4 mb-2" />
-                          <Skeleton className="h-4 w-1/2" />
+          loading={loading}
+          viewMode={viewMode}
+          selectedItems={selectedItems}
+          imageLoading={imageLoading === 'uploading'}
+          onDragEnd={handleDragEnd}
+          onSelectItem={(id, checked) => handleSelectItem(id, checked)}
+          onEditItem={handleEdit}
+          onDeleteItem={handleDelete}
+          onImageLoad={() => setImageLoading('success')}
+          onImageError={() => setImageLoading('error')}
+        />
               </div>
-              </div>
-            </CardContent>
-          </Card>
-                ))
-              )
-            ) : (
-              filteredMenuItems.map((item) => (
-                <SortableMenuItem
-                  key={item.id}
-                  item={item}
-                  viewMode={viewMode}
-                  isSelected={selectedItems.has(item.id)}
-                  imageLoading={!!imageLoading[item.id]}
-                  onSelect={(checked) => handleSelectItem(item.id, checked)}
-                  onEdit={() => handleEdit(item)}
-                  onDelete={() => handleDelete(item.id)}
-                  onImageLoad={() => setImageLoading(prev => ({ ...prev, [item.id]: false }))}
-                  onImageError={() => {
-                    console.error('Image load error for item:', item.id);
-                    setImageLoading(prev => ({ ...prev, [item.id]: false }));
-                  }}
-                />
-              ))
-            )}
-          </div>
-        </SortableContext>
-      </DndContext>
     </div>
   )
 }

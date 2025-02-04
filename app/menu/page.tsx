@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/context/auth-context'
+import { createClient } from '@/lib/supabase/client'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -20,95 +21,116 @@ interface MenuItem {
 }
 
 export default function MenuPage() {
-  const [loading, setLoading] = useState(true)
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [cart, setCart] = useState<MenuItem[]>([])
-  const { user, preferences } = useAuth()
+  const [error, setError] = useState<string | null>(null)
+  const { user, preferences, loading: authLoading } = useAuth()
+  const [pageLoading, setPageLoading] = useState(true)
+  const supabase = createClient()
 
   useEffect(() => {
-    const loadMenuItems = async () => {
+    let mounted = true
+
+    async function loadMenuItems() {
+      if (!mounted) return
+
       try {
-        const { createClient } = await import('@/lib/supabase/client')
-        const supabase = createClient()
-        
-        const { data, error } = await supabase
+        setError(null)
+        const { data, error: fetchError } = await supabase
           .from('menu_items')
           .select('*')
           .order('category')
 
-        if (error) throw error
+        if (!mounted) return
+
+        if (fetchError) {
+          console.error('Error loading menu items:', fetchError)
+          setError('Failed to load menu items. Please try again later.')
+          return
+        }
         
-        const validatedData = (data || []).map(item => ({
-          id: item.id as string,
-          name: item.name as string,
-          description: item.description as string,
-          price: item.price as number,
-          category: item.category as string,
-          image_url: item.image_url as string,
-          dietary: (item.dietary || []) as string[]
+        if (!data) {
+          setMenuItems([])
+          return
+        }
+
+        const validatedData = data.map(item => ({
+          id: item.id || '',
+          name: item.name || '',
+          description: item.description || '',
+          price: Number(item.price) || 0,
+          category: item.category || 'Uncategorized',
+          image_url: item.image_url || '',
+          dietary: Array.isArray(item.dietary) ? item.dietary : []
         }))
         
-        setMenuItems(validatedData)
+        if (mounted) {
+          setMenuItems(validatedData)
+        }
       } catch (error) {
         console.error('Error loading menu items:', error)
+        if (mounted) {
+          setError('An unexpected error occurred. Please try again later.')
+          setMenuItems([])
+        }
       } finally {
-        setLoading(false)
+        if (mounted) {
+          setPageLoading(false)
+        }
       }
     }
 
-    loadMenuItems()
-  }, [])
+    // Load menu items immediately if auth is ready
+    if (!authLoading) {
+      loadMenuItems()
+    }
+
+    return () => {
+      mounted = false
+    }
+  }, [supabase, authLoading])
 
   const filteredItems = menuItems.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.description.toLowerCase().includes(searchTerm.toLowerCase())
     
-    const matchesDietary = !preferences?.dietary?.length ||
-      item.dietary?.some(diet => preferences.dietary.includes(diet))
-
-    return matchesSearch && matchesDietary
+    if (!preferences?.dietary?.length) return matchesSearch
+    
+    return matchesSearch && item.dietary?.some(diet => 
+      preferences.dietary.includes(diet)
+    )
   })
 
   const categories = Array.from(new Set(filteredItems.map(item => item.category)))
 
   const addToCart = (item: MenuItem) => {
-    setCart([...cart, item])
+    setCart(prev => [...prev, item])
   }
 
-  if (loading) {
+  if (authLoading || pageLoading) {
     return (
-      <div className="flex min-h-screen flex-col">
-        <header className="sticky top-0 z-10 bg-white shadow-md p-4">
-          <div className="flex items-center justify-between max-w-6xl mx-auto">
-            <div className="flex items-center space-x-2">
-              <Utensils className="h-6 w-6" />
-              <h1 className="text-xl font-bold">Loading...</h1>
-            </div>
-          </div>
-        </header>
-        <main className="flex-1 container mx-auto p-4">
-          <div className="animate-pulse space-y-4">
-            {[1, 2, 3].map((i) => (
-              <Card key={i}>
-                <CardHeader>
-                  <div className="h-6 bg-gray-200 rounded w-1/4"></div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {[1, 2, 3].map((j) => (
-                    <div key={j} className="flex space-x-4">
-                      <div className="w-16 h-16 bg-gray-200 rounded"></div>
-                      <div className="flex-1 space-y-2">
-                        <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-                        <div className="h-3 bg-gray-200 rounded w-3/4"></div>
-                      </div>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </main>
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center space-y-4">
+          <Utensils className="h-8 w-8 mx-auto animate-spin" />
+          <p className="text-sm text-gray-500">Loading menu...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center space-y-4">
+          <p className="text-red-500">{error}</p>
+          <Button 
+            onClick={() => window.location.reload()} 
+            className="mt-4"
+          >
+            Try Again
+          </Button>
+        </div>
       </div>
     )
   }
@@ -150,53 +172,62 @@ export default function MenuPage() {
 
           <ScrollArea className="h-[calc(100vh-12rem)]">
             <div className="space-y-6">
-              {categories.map((category) => (
-                <Card key={category}>
-                  <CardHeader>
-                    <CardTitle>{category}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {filteredItems
-                      .filter(item => item.category === category)
-                      .map((item) => (
-                        <div key={item.id} className="flex space-x-4 p-4 rounded-lg border">
-                          <div className="relative w-24 h-24">
-                            <img
-                              src={item.image_url}
-                              alt={item.name}
-                              className="rounded-md object-cover"
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <h3 className="font-semibold">{item.name}</h3>
-                            <p className="text-sm text-gray-500">{item.description}</p>
-                            {item.dietary && item.dietary.length > 0 && (
-                              <div className="flex gap-1 mt-1">
-                                {item.dietary.map((diet) => (
-                                  <span
-                                    key={diet}
-                                    className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
-                                  >
-                                    {diet}
-                                  </span>
-                                ))}
+              {categories.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  No menu items available
+                </div>
+              ) : (
+                categories.map((category) => (
+                  <Card key={category}>
+                    <CardHeader>
+                      <CardTitle>{category}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {filteredItems
+                        .filter(item => item.category === category)
+                        .map((item) => (
+                          <div key={item.id} className="flex space-x-4 p-4 rounded-lg border">
+                            {item.image_url && (
+                              <div className="relative w-24 h-24">
+                                <img
+                                  src={item.image_url}
+                                  alt={item.name}
+                                  className="rounded-md object-cover w-full h-full"
+                                  loading="lazy"
+                                />
                               </div>
                             )}
-                            <div className="flex justify-between items-center mt-2">
-                              <span className="font-bold">${item.price.toFixed(2)}</span>
-                              <Button
-                                size="sm"
-                                onClick={() => addToCart(item)}
-                              >
-                                Add to Cart
-                              </Button>
+                            <div className="flex-1">
+                              <h3 className="font-semibold">{item.name}</h3>
+                              <p className="text-sm text-gray-500">{item.description}</p>
+                              {item.dietary && item.dietary.length > 0 && (
+                                <div className="flex gap-1 mt-1">
+                                  {item.dietary.map((diet) => (
+                                    <span
+                                      key={diet}
+                                      className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
+                                    >
+                                      {diet}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="flex justify-between items-center mt-2">
+                                <span className="font-bold">${item.price.toFixed(2)}</span>
+                                <Button
+                                  size="sm"
+                                  onClick={() => addToCart(item)}
+                                >
+                                  Add to Cart
+                                </Button>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
-                  </CardContent>
-                </Card>
-              ))}
+                        ))}
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </div>
           </ScrollArea>
         </div>

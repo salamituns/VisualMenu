@@ -1,14 +1,13 @@
 import './globals.css'
-import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
-import { AuthProvider } from '@/lib/context/auth-context'
-import { PermissionProvider } from '@/lib/context/permission-context'
+import { Metadata } from 'next'
+import { Providers } from './providers'
 
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'Visual Menu',
-  description: 'Transform your menu into a visual feast',
+  description: 'Create beautiful digital menus for your restaurant',
 }
 
 export default function RootLayout({
@@ -17,13 +16,11 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        <AuthProvider>
-          <PermissionProvider>
-            {children}
-          </PermissionProvider>
-        </AuthProvider>
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   )

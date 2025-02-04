@@ -1,8 +1,9 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { UserRole } from '@/lib/types/auth';
+import { useAuth } from './auth-context';
 
 interface RolePermission {
   permissions: {
@@ -32,64 +33,53 @@ const PermissionContext = createContext<PermissionContextType>({
 });
 
 export function PermissionProvider({ children }: { children: React.ReactNode }) {
+  const { user, loading: authLoading } = useAuth();
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const loadUserPermissions = async () => {
+    if (!user || authLoading) {
+      setPermissions([]);
+      setUserRole(null);
+      setLoading(false);
+      return;
+    }
+
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError) throw userError;
-
-      if (!user) {
-        setPermissions([]);
-        setUserRole(null);
-        return;
-      }
-
-      // First get the user's role
-      const { data: userData, error: userDataError } = await supabase
-        .from('users')
-        .select('role_id')
-        .eq('id', user.id)
+      // First, check if the user has a role in the database
+      const { data: roleData, error: roleError } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
         .single();
 
-      if (userDataError) throw userDataError;
-
-      if (!userData?.role_id) {
-        setPermissions([]);
-        setUserRole(null);
-        return;
+      if (roleError && roleError.code !== 'PGRST116') {
+        throw roleError;
       }
 
-      // Then get the role details and permissions
-      const { data, error: roleError } = await supabase
-        .from('roles')
-        .select(`
-          name,
-          role_permissions!inner (
-            permissions!inner (
-              name
-            )
-          )
-        `)
-        .eq('id', userData.role_id)
-        .single();
+      // If no role is found, assign default role
+      const role = roleData?.role || 'user';
+      setUserRole(role as UserRole);
 
-      if (roleError) throw roleError;
-
-      // Cast the data to unknown first, then to our type
-      const roleData = data as unknown as RoleData;
-      if (roleData) {
-        setUserRole(roleData.name);
-        const perms = roleData.role_permissions.map(rp => rp.permissions.name);
-        setPermissions(perms);
+      // Set permissions based on role
+      if (role === 'admin') {
+        setPermissions([
+          'view_menu',
+          'update_preferences',
+          'manage_menu',
+          'manage_users',
+          'view_analytics'
+        ]);
+      } else {
+        setPermissions(['view_menu', 'update_preferences']);
       }
     } catch (error) {
       console.error('Error loading permissions:', error);
-      setPermissions([]);
-      setUserRole(null);
+      // Set default permissions
+      setPermissions(['view_menu', 'update_preferences']);
+      setUserRole('user');
     } finally {
       setLoading(false);
     }
@@ -97,7 +87,7 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     loadUserPermissions();
-  }, []);
+  }, [user, authLoading]);
 
   const hasPermission = (permission: string): boolean => {
     return permissions.includes(permission);
@@ -108,16 +98,16 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
     await loadUserPermissions();
   };
 
+  const value = useMemo(() => ({
+    userRole,
+    permissions,
+    loading,
+    hasPermission,
+    refreshPermissions,
+  }), [userRole, permissions, loading]);
+
   return (
-    <PermissionContext.Provider
-      value={{
-        userRole,
-        permissions,
-        loading,
-        hasPermission,
-        refreshPermissions,
-      }}
-    >
+    <PermissionContext.Provider value={value}>
       {children}
     </PermissionContext.Provider>
   );

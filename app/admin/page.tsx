@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { BarChart, DollarSign, Users, Utensils } from 'lucide-react'
+import { useAuth } from '@/lib/context/auth-context'
+import { useRouter } from 'next/navigation'
 
 interface DashboardStats {
   totalRevenue: number;
@@ -19,6 +21,8 @@ interface Order {
 }
 
 export default function AdminPage() {
+  const { user } = useAuth();
+  const router = useRouter();
   const [stats, setStats] = useState<DashboardStats>({
     totalRevenue: 0,
     activeMenus: 0,
@@ -29,50 +33,40 @@ export default function AdminPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    console.log('Fetching dashboard statistics...'); // Development logging
+    if (!user) {
+      router.push('/login');
+      return;
+    }
     fetchDashboardStats();
-  }, []);
+  }, [user, router]);
 
   async function fetchDashboardStats() {
     try {
       const supabase = createClient();
-      console.log('Supabase client created'); // Development logging
+      console.log('Fetching dashboard statistics...');
 
       // Fetch menu items count
       const { count: menuCount, error: menuError } = await supabase
         .from('menu_items')
         .select('*', { count: 'exact', head: true });
       
-      if (menuError) {
-        console.error('Error fetching menu items:', menuError);
-        throw menuError;
-      }
-      console.log('Menu items count fetched:', menuCount); // Development logging
+      if (menuError) throw menuError;
 
-      // Fetch orders count and total revenue
+      // Fetch orders and calculate total revenue
       const { data: orders, error: ordersError } = await supabase
         .from('orders')
         .select('total_amount');
       
-      if (ordersError) {
-        console.error('Error fetching orders:', ordersError);
-        throw ordersError;
-      }
-      console.log('Orders data fetched:', orders); // Development logging
+      if (ordersError) throw ordersError;
 
-      // Calculate total revenue
-      const totalRevenue = (orders as Order[] || []).reduce((sum, order) => sum + (order.total_amount || 0), 0);
+      const totalRevenue = orders?.reduce((sum, order) => sum + (Number(order.total_amount) || 0), 0) || 0;
 
-      // Fetch active customers count (from auth.users table)
+      // Fetch users count (excluding service accounts)
       const { count: customerCount, error: customersError } = await supabase
-        .from('auth.users')
+        .from('users')
         .select('*', { count: 'exact', head: true });
       
-      if (customersError) {
-        console.error('Error fetching customers:', customersError);
-        throw customersError;
-      }
-      console.log('Customers count fetched:', customerCount); // Development logging
+      if (customersError) throw customersError;
 
       setStats({
         totalRevenue,
@@ -81,7 +75,6 @@ export default function AdminPage() {
         activeCustomers: customerCount || 0
       });
 
-      console.log('Dashboard stats updated successfully'); // Development logging
     } catch (err: any) {
       console.error('Error fetching dashboard stats:', err);
       setError(err.message || 'Failed to load dashboard statistics');
@@ -90,16 +83,34 @@ export default function AdminPage() {
     }
   }
 
+  if (!user) {
+    return null; // Will redirect in useEffect
+  }
+
   if (loading) {
-    return <div className="p-8">Loading dashboard data...</div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
+          <p className="mt-4">Loading dashboard data...</p>
+        </div>
+      </div>
+    );
   }
 
   if (error) {
     return (
       <div className="p-8">
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-          <p className="font-medium">Error loading dashboard</p>
-          <p className="text-sm">{error}</p>
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <strong className="font-bold">Error loading dashboard</strong>
+          <p className="block sm:inline"> {error}</p>
+          <Button 
+            onClick={() => fetchDashboardStats()} 
+            variant="outline"
+            className="mt-2"
+          >
+            Retry
+          </Button>
         </div>
       </div>
     );

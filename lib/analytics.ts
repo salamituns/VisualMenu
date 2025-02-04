@@ -1,42 +1,56 @@
 import { createClient } from '@/lib/supabase/client'
-import { Database } from '@/types/supabase'
-import { Duration } from '@/components/analytics/duration-selector'
 
-export interface AnalyticsData {
-  popularItems: {
-    name: string
-    orderCount: number
-    revenue: number
-  }[]
-  orderPatterns: {
-    date: string
-    orderCount: number
-    revenue: number
-    itemsSold: number
-    averageOrderValue: number
-  }[]
-  customerGrowth: {
-    date: string
-    newCustomers: number
-    totalCustomers: number
-  }[]
-  peakHours: {
-    hour: number
-    orderCount: number
-    revenue: number
-    itemsSold: number
-  }[]
-  categoryPerformance: {
-    category: string
-    orderCount: number
-    revenue: number
-    itemsSold: number
-  }[]
+export type TimeRange = '24h' | '7d' | '30d' | '90d' | 'all'
+
+interface AnalyticsSummaryData {
+  total_revenue: number
+  total_orders: number
+  active_menu_items: number
+  average_order_value: number
 }
 
-function getDurationDate(duration: Duration): Date {
+export interface AnalyticsSummary {
+  revenue: {
+    total: number
+    change: number
+  }
+  orders: {
+    total: number
+    change: number
+  }
+  menuItems: {
+    total: number
+    change: number
+  }
+  averageOrderValue: {
+    value: number
+    change: number
+  }
+}
+
+export interface SalesData {
+  date: string
+  revenue: number
+  orders: number
+}
+
+export interface MenuItemPerformance {
+  id: string
+  name: string
+  totalOrders: number
+  totalRevenue: number
+  averageOrderValue: number
+}
+
+export interface CustomerData {
+  newCustomers: number
+  totalCustomers: number
+  repeatRate: number
+}
+
+function getStartDate(timeRange: TimeRange): Date {
   const now = new Date()
-  switch (duration) {
+  switch (timeRange) {
     case '24h':
       return new Date(now.getTime() - 24 * 60 * 60 * 1000)
     case '7d':
@@ -45,164 +59,137 @@ function getDurationDate(duration: Duration): Date {
       return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
     case '90d':
       return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
-    case '1y':
-      return new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000)
     case 'all':
-      return new Date(0) // Beginning of time
+      return new Date(0)
     default:
-      return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000) // Default to 30 days
+      return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
   }
 }
 
-export async function getAnalyticsData(duration: Duration = '30d'): Promise<AnalyticsData> {
+export async function getAnalyticsSummary(timeRange: TimeRange): Promise<AnalyticsSummary> {
   const supabase = createClient()
-  const startDate = getDurationDate(duration)
-
+  const startDate = getStartDate(timeRange)
+  
   try {
-    // Get popular items
-    const { data: popularItems, error: popularItemsError } = await supabase
-      .from('orders')
-      .select(`
-        id,
-        quantity,
-        menu_item:menu_item_id (
-          name,
-          price
-        )
-      `)
-      .gte('created_at', startDate.toISOString())
-      .order('created_at', { ascending: false })
-
-    if (popularItemsError) throw popularItemsError
-
-    // Get daily order patterns
-    const { data: orderPatterns, error: orderPatternsError } = await supabase
-      .rpc('get_daily_order_patterns', {
+    // Get current period data
+    const { data: currentData, error: currentError } = await supabase
+      .rpc('get_analytics_summary', {
         start_date: startDate.toISOString()
       })
+      .returns<AnalyticsSummaryData>()
 
-    if (orderPatternsError) throw orderPatternsError
+    if (currentError) throw currentError
 
-    // Get customer growth
-    const { data: customerGrowth, error: customerGrowthError } = await supabase
-      .from('customers')
-      .select('created_at')
-      .gte('created_at', startDate.toISOString())
-      .order('created_at', { ascending: true })
-
-    if (customerGrowthError) throw customerGrowthError
-
-    // Get peak hours analysis
-    const { data: peakHours, error: peakHoursError } = await supabase
-      .rpc('get_peak_hours', {
-        start_date: startDate.toISOString()
+    // Get previous period data for comparison
+    const previousStartDate = new Date(startDate.getTime() - (startDate.getTime() - new Date(0).getTime()))
+    const { data: previousData, error: previousError } = await supabase
+      .rpc('get_analytics_summary', {
+        start_date: previousStartDate.toISOString()
       })
+      .returns<AnalyticsSummaryData>()
 
-    if (peakHoursError) throw peakHoursError
+    if (previousError) throw previousError
 
-    // Get category performance
-    const { data: categoryPerformance, error: categoryError } = await supabase
-      .rpc('get_category_performance', {
-        start_date: startDate.toISOString()
-      })
-
-    if (categoryError) throw categoryError
-
-    // Process the data
-    const processedPopularItems = processPopularItems(popularItems || [])
-    const processedOrderPatterns = processOrderPatterns(orderPatterns || [])
-    const processedCustomerGrowth = processCustomerGrowth(customerGrowth || [])
-    const processedPeakHours = processPeakHours(peakHours || [])
-    const processedCategories = processCategories(categoryPerformance || [])
+    // Calculate changes
+    const calculateChange = (current: number, previous: number) => 
+      previous === 0 ? 0 : ((current - previous) / previous) * 100
 
     return {
-      popularItems: processedPopularItems,
-      orderPatterns: processedOrderPatterns,
-      customerGrowth: processedCustomerGrowth,
-      peakHours: processedPeakHours,
-      categoryPerformance: processedCategories
+      revenue: {
+        total: currentData?.total_revenue || 0,
+        change: calculateChange(
+          currentData?.total_revenue || 0,
+          previousData?.total_revenue || 0
+        )
+      },
+      orders: {
+        total: currentData?.total_orders || 0,
+        change: calculateChange(
+          currentData?.total_orders || 0,
+          previousData?.total_orders || 0
+        )
+      },
+      menuItems: {
+        total: currentData?.active_menu_items || 0,
+        change: calculateChange(
+          currentData?.active_menu_items || 0,
+          previousData?.active_menu_items || 0
+        )
+      },
+      averageOrderValue: {
+        value: currentData?.average_order_value || 0,
+        change: calculateChange(
+          currentData?.average_order_value || 0,
+          previousData?.average_order_value || 0
+        )
+      }
     }
   } catch (error) {
-    console.error('Error fetching analytics data:', error)
+    console.error('Error fetching analytics summary:', error)
     throw error
   }
 }
 
-function processPopularItems(items: any[]): AnalyticsData['popularItems'] {
-  const itemStats = items.reduce((acc: Record<string, { count: number; revenue: number }>, order) => {
-    if (!order.menu_item) return acc
+export async function getSalesData(timeRange: TimeRange): Promise<SalesData[]> {
+  const supabase = createClient()
+  const startDate = getStartDate(timeRange)
 
-    const itemName = order.menu_item.name
-    const price = order.menu_item.price
-    const quantity = order.quantity
+  try {
+    const { data, error } = await supabase
+      .rpc('get_sales_data', {
+        start_date: startDate.toISOString()
+      })
+      .returns<SalesData[]>()
 
-    if (!acc[itemName]) {
-      acc[itemName] = { count: 0, revenue: 0 }
+    if (error) throw error
+
+    return data || []
+  } catch (error) {
+    console.error('Error fetching sales data:', error)
+    throw error
+  }
+}
+
+export async function getMenuItemPerformance(timeRange: TimeRange): Promise<MenuItemPerformance[]> {
+  const supabase = createClient()
+  const startDate = getStartDate(timeRange)
+
+  try {
+    const { data, error } = await supabase
+      .rpc('get_menu_item_performance', {
+        start_date: startDate.toISOString()
+      })
+      .returns<MenuItemPerformance[]>()
+
+    if (error) throw error
+
+    return data || []
+  } catch (error) {
+    console.error('Error fetching menu item performance:', error)
+    throw error
+  }
+}
+
+export async function getCustomerData(timeRange: TimeRange): Promise<CustomerData> {
+  const supabase = createClient()
+  const startDate = getStartDate(timeRange)
+
+  try {
+    const { data, error } = await supabase
+      .rpc('get_customer_data', {
+        start_date: startDate.toISOString()
+      })
+      .returns<CustomerData>()
+
+    if (error) throw error
+
+    return data || {
+      newCustomers: 0,
+      totalCustomers: 0,
+      repeatRate: 0
     }
-
-    acc[itemName].count += quantity
-    acc[itemName].revenue += price * quantity
-
-    return acc
-  }, {})
-
-  return Object.entries(itemStats)
-    .map(([name, { count, revenue }]) => ({
-      name,
-      orderCount: count,
-      revenue
-    }))
-    .sort((a, b) => b.orderCount - a.orderCount)
-    .slice(0, 10)
-}
-
-function processOrderPatterns(patterns: any[]): AnalyticsData['orderPatterns'] {
-  return patterns.map(pattern => ({
-    date: pattern.date,
-    orderCount: pattern.total_orders,
-    revenue: pattern.daily_revenue,
-    itemsSold: pattern.items_sold,
-    averageOrderValue: pattern.average_order_value
-  }))
-}
-
-function processCustomerGrowth(customers: any[]): AnalyticsData['customerGrowth'] {
-  const dailyCustomers = customers.reduce((acc: Record<string, { new: number }>, customer) => {
-    const date = new Date(customer.created_at).toISOString().split('T')[0]
-    if (!acc[date]) {
-      acc[date] = { new: 0 }
-    }
-    acc[date].new += 1
-    return acc
-  }, {})
-
-  let totalCustomers = 0
-  return Object.entries(dailyCustomers)
-    .map(([date, { new: newCustomers }]) => {
-      totalCustomers += newCustomers
-      return {
-        date,
-        newCustomers,
-        totalCustomers
-      }
-    })
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-}
-
-function processPeakHours(hours: any[]): AnalyticsData['peakHours'] {
-  return hours.map(hour => ({
-    hour: hour.hour_of_day,
-    orderCount: hour.total_orders,
-    revenue: hour.revenue,
-    itemsSold: hour.items_sold
-  }))
-}
-
-function processCategories(categories: any[]): AnalyticsData['categoryPerformance'] {
-  return categories.map(category => ({
-    category: category.category,
-    orderCount: category.total_orders,
-    revenue: category.revenue,
-    itemsSold: category.items_sold
-  }))
+  } catch (error) {
+    console.error('Error fetching customer data:', error)
+    throw error
+  }
 } 

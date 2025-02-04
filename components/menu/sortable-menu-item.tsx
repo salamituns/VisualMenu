@@ -7,9 +7,10 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Pencil, Trash2, GripVertical } from "lucide-react"
+import { Pencil, Trash2, GripVertical, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { MenuItem } from "@/types/menu"
+import Image from "next/image"
 
 interface SortableMenuItemProps {
   item: MenuItem
@@ -23,6 +24,8 @@ interface SortableMenuItemProps {
   onImageError: () => void
 }
 
+const PLACEHOLDER_IMAGE = '/placeholder.svg'
+
 export function SortableMenuItem({
   item,
   viewMode,
@@ -32,7 +35,7 @@ export function SortableMenuItem({
   onEdit,
   onDelete,
   onImageLoad,
-  onImageError
+  onImageError,
 }: SortableMenuItemProps) {
   const {
     attributes,
@@ -40,7 +43,7 @@ export function SortableMenuItem({
     setNodeRef,
     transform,
     transition,
-    isDragging
+    isDragging,
   } = useSortable({ id: item.id })
 
   const style = {
@@ -49,176 +52,131 @@ export function SortableMenuItem({
     opacity: isDragging ? 0.5 : 1,
   }
 
+  const imageUrl = item.image_url || PLACEHOLDER_IMAGE
+
   return (
     <Card
       ref={setNodeRef}
       style={style}
       className={cn(
-        "relative overflow-hidden hover:shadow-lg transition-shadow",
-        isSelected && "ring-2 ring-primary",
-        isDragging && "shadow-lg"
+        'relative overflow-hidden group',
+        isDragging && 'shadow-lg',
+        viewMode === 'grid' ? 'h-full' : ''
       )}
     >
-      <div className="absolute top-2 left-2 z-10 flex items-center gap-2">
-        <div
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded"
-        >
-          <GripVertical className="h-4 w-4 text-muted-foreground" />
-        </div>
+      <div className="absolute top-2 left-2 z-10">
         <Checkbox
           checked={isSelected}
           onCheckedChange={onSelect}
+          className="bg-white/90"
         />
+      </div>
+      
+      <div
+        {...attributes}
+        {...listeners}
+        className="absolute top-2 right-2 z-10 cursor-grab active:cursor-grabbing"
+      >
+        <GripVertical className="h-5 w-5 text-gray-500 hover:text-gray-700" />
       </div>
 
       {viewMode === 'grid' ? (
         <>
           <div className="relative aspect-video">
-            {item.image_url ? (
-              <>
-                {imageLoading && (
-                  <Skeleton className="absolute inset-0" />
-                )}
-                <img
-                  src={item.image_url}
-                  alt={item.name}
-                  className={cn(
-                    "w-full h-full object-cover",
-                    imageLoading ? 'opacity-0' : 'opacity-100'
-                  )}
-                  onLoad={onImageLoad}
-                  onError={onImageError}
-                />
-              </>
-            ) : (
-              <div className="absolute inset-0 bg-gray-100 flex items-center justify-center">
-                <span className="text-gray-400">No image</span>
+            <Image
+              src={item.image_url || PLACEHOLDER_IMAGE}
+              alt={item.name}
+              fill
+              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+              className="object-cover transition-all"
+              onLoad={onImageLoad}
+              onError={(e) => {
+                console.error('Image load error for:', item.image_url);
+                e.currentTarget.src = PLACEHOLDER_IMAGE;
+                onImageError();
+              }}
+              unoptimized={!item.image_url}
+            />
+            {imageLoading && (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white" />
               </div>
-            )}
-            {!item.is_available && (
-              <Badge 
-                variant="destructive" 
-                className="absolute top-2 right-2"
-              >
-                Unavailable
-              </Badge>
             )}
           </div>
           <CardContent className="p-4">
-            <div className="flex justify-between items-start mb-2">
-              <div>
-                <h3 className="font-semibold">{item.name}</h3>
+            <div className="flex justify-between items-start gap-4">
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-lg truncate">{item.name}</h3>
                 <p className="text-sm text-gray-500 line-clamp-2">{item.description}</p>
+                <p className="mt-1 font-medium">${parseFloat(item.price).toFixed(2)}</p>
               </div>
-              <div className="flex flex-col items-end">
-                <span className="font-medium">${parseFloat(item.price).toFixed(2)}</span>
-                {item.special_offer?.discount_price && (
-                  <Badge variant="secondary" className="mt-1">
-                    Special: ${parseFloat(item.special_offer.discount_price).toFixed(2)}
-                  </Badge>
-                )}
+              <div className="flex gap-2 shrink-0">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onEdit}
+                  className="h-8 w-8"
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onDelete}
+                  className="h-8 w-8 text-red-500 hover:text-red-600"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               </div>
-            </div>
-            {item.dietary_info && item.dietary_info.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-2">
-                {item.dietary_info.map((info, index) => (
-                  <Badge key={index} variant="outline" className="text-xs">
-                    {info}
-                  </Badge>
-                ))}
-              </div>
-            )}
-            <div className="flex justify-end mt-4 space-x-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onEdit}
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onDelete}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
             </div>
           </CardContent>
         </>
       ) : (
         <CardContent className="p-4">
-          <div className="flex gap-4">
-            <div className="relative w-24 h-24 flex-shrink-0">
-              {item.image_url ? (
-                <>
-                  {imageLoading && (
-                    <Skeleton className="absolute inset-0" />
-                  )}
-                  <img
-                    src={item.image_url}
-                    alt={item.name}
-                    className={cn(
-                      "w-full h-full object-cover rounded",
-                      imageLoading ? 'opacity-0' : 'opacity-100'
-                    )}
-                    onLoad={onImageLoad}
-                    onError={onImageError}
-                  />
-                </>
-              ) : (
-                <div className="w-full h-full bg-gray-100 rounded flex items-center justify-center">
-                  <span className="text-gray-400 text-xs">No image</span>
+          <div className="flex items-center gap-4">
+            <div className="relative h-16 w-16 shrink-0">
+              <Image
+                src={item.image_url || PLACEHOLDER_IMAGE}
+                alt={item.name}
+                fill
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                className="object-cover rounded transition-all"
+                onLoad={onImageLoad}
+                onError={(e) => {
+                  console.error('Image load error for:', item.image_url);
+                  e.currentTarget.src = PLACEHOLDER_IMAGE;
+                  onImageError();
+                }}
+                unoptimized={!item.image_url}
+              />
+              {imageLoading && (
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
                 </div>
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="font-semibold truncate">{item.name}</h3>
-                  <p className="text-sm text-gray-500 line-clamp-1">{item.description}</p>
-                  {item.dietary_info && item.dietary_info.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {item.dietary_info.map((info, index) => (
-                        <Badge key={index} variant="outline" className="text-xs">
-                          {info}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-col items-end ml-4">
-                  <span className="font-medium whitespace-nowrap">${parseFloat(item.price).toFixed(2)}</span>
-                  {item.special_offer?.discount_price && (
-                    <Badge variant="secondary" className="mt-1">
-                      Special: ${parseFloat(item.special_offer.discount_price).toFixed(2)}
-                    </Badge>
-                  )}
-                  {!item.is_available && (
-                    <Badge variant="destructive" className="mt-1">
-                      Unavailable
-                    </Badge>
-                  )}
-                </div>
-              </div>
-              <div className="flex justify-end mt-2 space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onEdit}
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onDelete}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
+              <h3 className="font-semibold truncate">{item.name}</h3>
+              <p className="text-sm text-gray-500 line-clamp-1">{item.description}</p>
+              <p className="mt-1 font-medium">${parseFloat(item.price).toFixed(2)}</p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onEdit}
+                className="h-8 w-8"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onDelete}
+                className="h-8 w-8 text-red-500 hover:text-red-600"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
             </div>
           </div>
         </CardContent>

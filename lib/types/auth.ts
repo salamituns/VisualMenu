@@ -1,4 +1,4 @@
-export type UserRole = 'owner' | 'manager' | 'staff';
+export type UserRole = 'admin' | 'user' | 'guest';
 
 export interface Permission {
   id: string;
@@ -18,6 +18,17 @@ export interface UserWithRole {
   role_id: string;
   role?: Role;
   permissions?: string[];
+}
+
+export interface UserPermission {
+  name: string;
+  description?: string;
+}
+
+export interface RoleWithPermissions {
+  id: string;
+  name: UserRole;
+  permissions: UserPermission[];
 }
 
 export const PERMISSIONS = {

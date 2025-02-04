@@ -1,32 +1,44 @@
--- Create the menu-uploads bucket
-INSERT INTO storage.buckets (id, name, public) 
-VALUES ('menu-uploads', 'menu-uploads', true);
+-- Create the storage bucket if it doesn't exist
+insert into storage.buckets (id, name, public)
+values ('images', 'images', true)
+on conflict (id) do nothing;
 
--- Allow public access to menu-uploads bucket
-CREATE POLICY "Menu uploads are publicly accessible"
-ON storage.objects FOR SELECT
-USING ( bucket_id = 'menu-uploads' );
+-- Drop existing policies
+drop policy if exists "Public Access" on storage.objects;
+drop policy if exists "Authenticated users can upload images" on storage.objects;
+drop policy if exists "Authenticated users can update their images" on storage.objects;
+drop policy if exists "Authenticated users can delete their images" on storage.objects;
 
--- Allow authenticated users to upload menu images
-CREATE POLICY "Authenticated users can upload menu images"
-ON storage.objects FOR INSERT
-WITH CHECK (
-    bucket_id = 'menu-uploads'
-    AND auth.role() = 'authenticated'
+-- Allow public access to images
+create policy "Public Access"
+on storage.objects for select
+to public
+using ( bucket_id = 'images' );
+
+-- Allow authenticated users to upload images
+create policy "Authenticated users can upload images"
+on storage.objects for insert
+to authenticated
+with check (
+    bucket_id = 'images'
+    and auth.role() = 'authenticated'
 );
 
--- Allow users to update their menu images
-CREATE POLICY "Users can update their menu images"
-ON storage.objects FOR UPDATE
-USING (
-    bucket_id = 'menu-uploads'
-    AND auth.role() = 'authenticated'
-);
+-- Allow authenticated users to update their own images
+create policy "Authenticated users can update their images"
+on storage.objects for update
+to authenticated
+using (
+    bucket_id = 'images'
+    and auth.role() = 'authenticated'
+)
+with check (bucket_id = 'images');
 
--- Allow users to delete their menu images
-CREATE POLICY "Users can delete their menu images"
-ON storage.objects FOR DELETE
-USING (
-    bucket_id = 'menu-uploads'
-    AND auth.role() = 'authenticated'
+-- Allow authenticated users to delete their own images
+create policy "Authenticated users can delete their images"
+on storage.objects for delete
+to authenticated
+using (
+    bucket_id = 'images'
+    and auth.role() = 'authenticated'
 ); 
