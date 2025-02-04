@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { DIETARY_ICONS, DIETARY_LABELS } from '@/types/menu'
 
 interface MenuItem {
   id: string
@@ -18,6 +19,8 @@ interface MenuItem {
   image_url: string | null
   is_available: boolean
   category_id: string
+  dietary_info?: string[]
+  portion_sizes?: { id: string; name: string; price: number }[]
 }
 
 interface Category {
@@ -151,7 +154,36 @@ export default function MenuPage() {
                         <CardDescription>{item.description}</CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <p className="text-2xl font-bold">${item.price.toFixed(2)}</p>
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <p className="text-2xl font-bold">${item.price.toFixed(2)}</p>
+                            {item.dietary_info && item.dietary_info.length > 0 && (
+                              <div className="flex gap-1">
+                                {item.dietary_info.map((info) => (
+                                  <span
+                                    key={info}
+                                    className="inline-flex items-center rounded-full bg-muted px-2 py-1 text-xs"
+                                    title={DIETARY_LABELS[info as keyof typeof DIETARY_LABELS]}
+                                  >
+                                    {DIETARY_ICONS[info as keyof typeof DIETARY_ICONS]}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {item.portion_sizes && item.portion_sizes.length > 0 && (
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium">Portion Sizes</p>
+                              <div className="flex flex-wrap gap-2">
+                                {item.portion_sizes.map((size) => (
+                                  <Badge key={size.id} variant="outline">
+                                    {size.name} - ${size.price.toFixed(2)}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </CardContent>
                     </Card>
                   ))}
