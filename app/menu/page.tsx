@@ -29,8 +29,25 @@ interface Category {
   description: string | null
 }
 
+interface Filters {
+  category: string | null
+  dietary: string[]
+  priceRange: {
+    min: number | null
+    max: number | null
+  }
+}
+
 export default function MenuPage() {
-  const [searchQuery, setSearchQuery] = useState('')
+  const [searchQuery, setSearchQuery] = useState("")
+  const [filters, setFilters] = useState<Filters>({
+    category: null,
+    dietary: [],
+    priceRange: {
+      min: null,
+      max: null
+    }
+  })
   const supabase = createClient()
 
   // Fetch categories
@@ -74,19 +91,35 @@ export default function MenuPage() {
     return <MenuSkeleton />
   }
 
-  // Filter menu items based on search query
-  const filteredMenuItems = menuItems?.filter(item => {
-    const searchLower = searchQuery.toLowerCase()
-    return (
-      item.name.toLowerCase().includes(searchLower) ||
-      item.description.toLowerCase().includes(searchLower)
-    )
-  })
-
   const menuItemsByCategory = categories?.map(category => ({
     ...category,
-    items: filteredMenuItems?.filter(item => item.category_id === category.id) || []
+    items: menuItems?.filter(item => item.category_id === category.id) || []
   })).filter(category => category.items.length > 0) // Only show categories with matching items
+
+  // Filter menu items
+  const filteredMenuItems = menuItemsByCategory?.map(category => ({
+    ...category,
+    items: category.items.filter(item => {
+      // Search filter
+      const matchesSearch = searchQuery === '' ||
+        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.description.toLowerCase().includes(searchQuery.toLowerCase())
+
+      // Category filter
+      const matchesCategory = !filters.category || item.category_id === filters.category
+
+      // Dietary filter
+      const matchesDietary = filters.dietary.length === 0 ||
+        filters.dietary.every(diet => item.dietary_info?.includes(diet))
+
+      // Price range filter
+      const matchesPriceRange =
+        (!filters.priceRange.min || item.price >= filters.priceRange.min) &&
+        (!filters.priceRange.max || item.price <= filters.priceRange.max)
+
+      return matchesSearch && matchesCategory && matchesDietary && matchesPriceRange
+    })
+  })).filter(category => category.items.length > 0)
 
   return (
     <div className="min-h-screen bg-background">
@@ -97,19 +130,102 @@ export default function MenuPage() {
       </header>
       
       <main className="container py-6">
-        <div className="mb-8">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search menu..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
+        <div className="mb-8 space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search menu..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <div className="flex gap-2">
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                value={filters.category || ""}
+                onChange={(e) => setFilters(prev => ({
+                  ...prev,
+                  category: e.target.value || null
+                }))}
+              >
+                <option value="">All Categories</option>
+                {categories?.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Dietary Preferences</p>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(DIETARY_LABELS).map(([key, label]) => (
+                <Badge
+                  key={key}
+                  variant={filters.dietary.includes(key) ? "default" : "outline"}
+                  className="cursor-pointer"
+                  onClick={() => {
+                    setFilters(prev => ({
+                      ...prev,
+                      dietary: prev.dietary.includes(key)
+                        ? prev.dietary.filter(d => d !== key)
+                        : [...prev.dietary, key]
+                    }))
+                  }}
+                >
+                  {DIETARY_ICONS[key as keyof typeof DIETARY_ICONS]} {label}
+                </Badge>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Price Range</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Min $</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Min"
+                  value={filters.priceRange.min || ""}
+                  onChange={(e) => setFilters(prev => ({
+                    ...prev,
+                    priceRange: {
+                      ...prev.priceRange,
+                      min: e.target.value ? parseFloat(e.target.value) : null
+                    }
+                  }))}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Max $</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Max"
+                  value={filters.priceRange.max || ""}
+                  onChange={(e) => setFilters(prev => ({
+                    ...prev,
+                    priceRange: {
+                      ...prev.priceRange,
+                      max: e.target.value ? parseFloat(e.target.value) : null
+                    }
+                  }))}
+                />
+              </div>
+            </div>
+          </div>
+
           {searchQuery && (
-            <p className="mt-2 text-sm text-muted-foreground">
-              Found {filteredMenuItems?.length} items
+            <p className="text-sm text-muted-foreground">
+              Found {filteredMenuItems?.reduce((acc, cat) => acc + cat.items.length, 0)} items
             </p>
           )}
         </div>
@@ -121,7 +237,7 @@ export default function MenuPage() {
           </div>
         ) : (
           <div className="space-y-8">
-            {menuItemsByCategory?.map(category => (
+            {filteredMenuItems?.map(category => (
               <section key={category.id} className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
