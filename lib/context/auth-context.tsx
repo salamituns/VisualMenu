@@ -6,13 +6,22 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 
+export interface UserPreferences {
+  dietary?: string[]
+  favorites?: string[]
+  dark_mode?: boolean
+  language?: string
+}
+
 interface AuthContextType {
   user: User | null
   loading: boolean
+  preferences: UserPreferences | null
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<void>
+  updatePreferences: (preferences: Partial<UserPreferences>) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -24,17 +33,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setUser(session?.user ?? null)
-        setLoading(false)
-      }
-    )
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user ?? null)
+      setLoading(false)
+      if (event === 'SIGNED_IN') router.refresh()
+      if (event === 'SIGNED_OUT') router.refresh()
+    })
 
     return () => {
       subscription.unsubscribe()
     }
-  }, [supabase.auth])
+  }, [supabase, router])
 
   const signIn = async (email: string, password: string) => {
     try {
@@ -90,15 +101,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const updatePreferences = async (preferences: Partial<UserPreferences>) => {
+    try {
+      if (!user) throw new Error('No user logged in')
+      
+      const { error } = await supabase.auth.updateUser({
+        data: {
+          dietary: preferences.dietary,
+          favorites: preferences.favorites,
+          dark_mode: preferences.dark_mode,
+          language: preferences.language,
+        },
+      })
+      
+      if (error) throw error
+      toast.success('Preferences updated successfully')
+    } catch (error) {
+      const authError = error as AuthError
+      toast.error(authError.message)
+    }
+  }
+
   return (
     <AuthContext.Provider
       value={{
         user,
         loading,
+        preferences: user?.user_metadata as UserPreferences || null,
         signIn,
         signUp,
         signOut,
         resetPassword,
+        updatePreferences,
       }}
     >
       {children}

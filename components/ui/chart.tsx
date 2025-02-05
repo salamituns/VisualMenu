@@ -1,6 +1,7 @@
 "use client"
 
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LineChart, Line, PieChart, Pie } from 'recharts'
+import { ReactElement, JSXElementConstructor } from 'react'
 
 export {
   ResponsiveContainer,
@@ -17,7 +18,11 @@ export {
   Pie,
 }
 
-export function ChartContainer({ children }: { children: React.ReactNode }) {
+interface ChartContainerProps {
+  children: ReactElement<any, string | JSXElementConstructor<any>>
+}
+
+export function ChartContainer({ children }: ChartContainerProps) {
   return (
     <ResponsiveContainer width="100%" height={350}>
       {children}
@@ -25,12 +30,17 @@ export function ChartContainer({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function ChartTooltip() {
-  return <Tooltip />
+interface TooltipContentProps {
+  active?: boolean;
+  payload?: Array<{
+    value: number;
+    [key: string]: any;
+  }>;
+  label?: string;
 }
 
-export function ChartTooltipContent({ active, payload, label }: any) {
-  if (!active || !payload) return null
+export function ChartTooltipContent({ active, payload, label }: TooltipContentProps) {
+  if (!active || !payload) return null;
 
   return (
     <div className="rounded-lg border bg-background p-2 shadow-sm">

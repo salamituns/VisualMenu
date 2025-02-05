@@ -45,25 +45,13 @@ import { toast } from 'react-hot-toast'
 import dynamic from 'next/dynamic'
 import { useAuth } from '@/lib/context/auth-context'
 import { useRouter } from 'next/navigation'
+import { MenuItem } from '@/types/menu'
 
 // Import SortableMenuList with no SSR
 const SortableMenuList = dynamic(
   () => import('@/components/menu/sortable-menu-list'),
   { ssr: false }
 )
-
-interface MenuItem {
-  id: string;
-  name: string;
-  description: string;
-  price: string;
-  category: string;
-  image_url: string | null;
-  dietary_info: string[];
-  is_available: boolean;
-  special_offer: Record<string, any> | null;
-  order: number;
-}
 
 interface DatabaseMenuItem {
   id: string;
@@ -79,26 +67,36 @@ interface DatabaseMenuItem {
 }
 
 interface FormData {
-  name: string;
-  description: string;
-  price: string;
-  category: string;
-  image_url: string | null;
-  dietary_info: string[];
-  is_available: boolean;
-  special_offer: Record<string, any> | null;
+  name: string
+  description: string
+  price: string
+  category: string
+  image_url: string | null
+  dietary_info: string[]
+  is_available: boolean
+  special_offer: Record<string, any> | null
 }
 
 type ImageLoadingState = 'idle' | 'uploading' | 'success' | 'error';
 
 interface Filters {
-  categories: string[];
-  dietary: string[];
-  availability: 'all' | 'available' | 'unavailable';
+  dietary: string[]
+  categories: string[]
+  availability: 'all' | 'available' | 'unavailable'
   priceRange: {
-    min: number | null;
-    max: number | null;
-  };
+    min: number | null
+    max: number | null
+  }
+}
+
+const defaultFilters: Filters = {
+  dietary: [],
+  categories: [],
+  availability: 'all',
+  priceRange: {
+    min: null,
+    max: null
+  }
 }
 
 interface BatchUpdateData extends Record<string, unknown> {
@@ -132,15 +130,7 @@ export default function MenuManagementPage() {
   })
   const [imageLoading, setImageLoading] = useState<ImageLoadingState>('idle')
   const [searchQuery, setSearchQuery] = useState('')
-  const [filters, setFilters] = useState<Filters>({
-    categories: [],
-    dietary: [],
-    availability: 'all',
-    priceRange: {
-      min: null,
-      max: null
-    }
-  })
+  const [filters, setFilters] = useState<Filters>(defaultFilters)
   const [filtersLoading, setFiltersLoading] = useState(false)
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
   const [batchUpdating, setBatchUpdating] = useState(false)
@@ -186,7 +176,13 @@ export default function MenuManagementPage() {
 
   useEffect(() => {
     // Extract unique categories when menu items change
-    const uniqueCategories = Array.from(new Set(menuItems.map(item => item.category)))
+    const uniqueCategories = Array.from(
+      new Set(
+        menuItems
+          .map(item => item.category_id)
+          .filter((category): category is string => category !== undefined)
+      )
+    )
     setCategories(uniqueCategories)
   }, [menuItems])
 
@@ -261,17 +257,20 @@ export default function MenuManagementPage() {
           originalType: typeof item.price
         });
         
-        const menuItem = {
+        const menuItem: MenuItem = {
           id: item.id,
           name: item.name,
           description: item.description || '',
-          price: item.price.toString(), // Convert to string
-          category: item.category,
-          image_url: item.image_url,
-          dietary_info: item.dietary_info || [],
+          price: parseFloat(item.price.toString()),
+          category_id: item.category || '',
+          image_url: item.image_url || null,
+          image_path: null,
           is_available: item.is_available,
-          special_offer: item.special_offer,
-          order: item.order || 0
+          dietary_info: item.dietary_info || [],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          portion_sizes: [],
+          customization_options: []
         };
 
         console.log(`Processed item ${item.id}:`, {
@@ -376,7 +375,7 @@ export default function MenuManagementPage() {
         name: formData.name,
         description: formData.description || '',
         price: parseFloat(formData.price),
-        category: formData.category,
+        category_id: formData.category,
         image_url: imageUrl,
         dietary_info: formData.dietary_info || [],
         is_available: formData.is_available,
@@ -424,20 +423,30 @@ export default function MenuManagementPage() {
     }
   }
 
-  function handleEdit(item: MenuItem) {
-    setEditingId(item.id);
-    setNewItem(false);
+  const handleEdit = (item: MenuItem) => {
+    if (!item) return
+    
+    // Ensure dietary_info is a string array using type assertion after validation
+    const dietary_info = (item.dietary_info as string[] | undefined)?.filter(
+      (d): d is string => typeof d === 'string'
+    ) ?? []
+    
+    const safeItem: MenuItem = {
+      ...item,
+      dietary_info
+    }
+    
+    setEditingId(safeItem.id)
     setFormData({
-      name: item.name,
-      description: item.description,
-      price: item.price,
-      category: item.category,
-      image_url: item.image_url,
-      dietary_info: [...item.dietary_info],
-      is_available: item.is_available,
-      special_offer: item.special_offer
-    });
-    setImagePreview('');
+      name: safeItem.name,
+      description: safeItem.description || '',
+      price: safeItem.price.toString(),
+      category: safeItem.category_id || '',
+      image_url: safeItem.image_url || null,
+      dietary_info,
+      is_available: safeItem.is_available,
+      special_offer: null
+    })
   }
 
   const handleClose = () => {
@@ -461,18 +470,20 @@ export default function MenuManagementPage() {
     const matchesSearch = 
       searchQuery === '' ||
       item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.category.toLowerCase().includes(searchQuery.toLowerCase())
+      (item.description?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+      (item.category_id?.toLowerCase() || '').includes(searchQuery.toLowerCase())
 
     // Category filter
     const matchesCategory = 
       filters.categories.length === 0 ||
-      filters.categories.includes(item.category)
+      (item.category_id && filters.categories.includes(item.category_id))
 
     // Dietary filter
     const matchesDietary = 
       filters.dietary.length === 0 ||
-      filters.dietary.some(diet => item.dietary_info.includes(diet))
+      (Array.isArray(item.dietary_info) && item.dietary_info.some(diet => 
+        typeof diet === 'string' && filters.dietary.includes(diet)
+      ))
 
     // Availability filter
     const matchesAvailability = 
@@ -481,7 +492,7 @@ export default function MenuManagementPage() {
       (filters.availability === 'unavailable' && !item.is_available)
 
     // Price range filter
-    const price = parseFloat(item.price)
+    const price = parseFloat(item.price.toString())
     const matchesPriceRange = 
       (filters.priceRange.min === null || price >= filters.priceRange.min) &&
       (filters.priceRange.max === null || price <= filters.priceRange.max)
@@ -491,7 +502,11 @@ export default function MenuManagementPage() {
 
   // Get all unique dietary options from menu items
   const allDietaryOptions = Array.from(
-    new Set(menuItems.flatMap(item => item.dietary_info))
+    new Set(
+      menuItems
+        .flatMap(item => item.dietary_info || [])
+        .filter((diet): diet is string => typeof diet === 'string' && diet !== '')
+    )
   ).sort()
 
   const handleSelectAll = (checked: boolean) => {
@@ -576,8 +591,8 @@ export default function MenuManagementPage() {
         id: item.id,
         name: item.name,
         description: item.description || '',
-        price: parseFloat(item.price),
-        category: item.category,
+        price: parseFloat(item.price.toString()),
+        category_id: item.category_id,
         order: index + 1 // Start from 1 to avoid 0
       }));
 
@@ -621,6 +636,30 @@ export default function MenuManagementPage() {
       updateItemsOrder(newItems);
     }
   };
+
+  const handleFilterChange = (dietaryInfo: string) => {
+    setFilters((prev): Filters => {
+      const newDietary = prev.dietary.filter((d): d is string => typeof d === 'string')
+      return {
+        ...prev,
+        dietary: newDietary.includes(dietaryInfo)
+          ? newDietary.filter(d => d !== dietaryInfo)
+          : [...newDietary, dietaryInfo]
+      }
+    })
+  }
+
+  const handleMenuItemClick = (dietaryInfo: string) => {
+    setFilters((prev): Filters => {
+      const newDietary = prev.dietary.filter((d): d is string => typeof d === 'string')
+      return {
+        ...prev,
+        dietary: newDietary.includes(dietaryInfo)
+          ? newDietary.filter(d => d !== dietaryInfo)
+          : [...newDietary, dietaryInfo]
+      }
+    })
+  }
 
   // Don't render anything until we're on the client
   if (!isClient || authLoading || permissionLoading) {
@@ -779,7 +818,7 @@ export default function MenuManagementPage() {
                     <span className="flex items-center justify-between w-full">
                       {category}
                       <Badge variant="secondary" className="ml-2">
-                        {menuItems.filter(item => item.category === category).length}
+                        {menuItems.filter(item => item.category_id === category).length}
                       </Badge>
                     </span>
                   </DropdownMenuCheckboxItem>
@@ -793,13 +832,10 @@ export default function MenuManagementPage() {
                   <DropdownMenuCheckboxItem
                     key={diet}
                     checked={filters.dietary.includes(diet)}
-                    onCheckedChange={(checked: boolean) => {
-                      setFilters(prev => ({
-                        ...prev,
-                        dietary: checked
-                          ? [...prev.dietary, diet]
-                          : prev.dietary.filter(d => d !== diet)
-                      }))
+                    onCheckedChange={() => {
+                      if (typeof diet === 'string') {
+                        handleFilterChange(diet)
+                      }
                     }}
                   >
                     {diet}
@@ -864,12 +900,7 @@ export default function MenuManagementPage() {
                   variant="outline"
                   size="sm"
                   className="w-full"
-                  onClick={() => setFilters({
-                    categories: [],
-                    dietary: [],
-                    availability: 'all',
-                    priceRange: { min: null, max: null }
-                  })}
+                  onClick={() => setFilters(defaultFilters)}
                 >
                   Reset All Filters
                 </Button>
@@ -900,10 +931,7 @@ export default function MenuManagementPage() {
                 key={diet}
                 variant="secondary"
                 className="cursor-pointer hover:bg-secondary/80"
-                onClick={() => setFilters(prev => ({
-                  ...prev,
-                  dietary: prev.dietary.filter(d => d !== diet)
-                }))}
+                onClick={() => handleFilterChange(diet)}
               >
                 {diet} ×
               </Badge>
@@ -933,12 +961,7 @@ export default function MenuManagementPage() {
               variant="ghost"
               size="sm"
               className="text-muted-foreground hover:text-foreground"
-              onClick={() => setFilters({
-                categories: [],
-                dietary: [],
-                availability: 'all',
-                priceRange: { min: null, max: null }
-              })}
+              onClick={() => setFilters(defaultFilters)}
             >
               Clear all
             </Button>
@@ -959,12 +982,7 @@ export default function MenuManagementPage() {
               variant="outline"
               onClick={() => {
                 setSearchQuery('')
-                setFilters({
-                  categories: [],
-                  dietary: [],
-                  availability: 'all',
-                  priceRange: { min: null, max: null }
-                })
+                setFilters(defaultFilters)
               }}
             >
               Reset all filters

@@ -108,7 +108,7 @@ export function SortableMenuItem({
               <div className="flex-1 min-w-0">
                 <h3 className="font-semibold text-lg truncate">{item.name}</h3>
                 <p className="text-sm text-gray-500 line-clamp-2">{item.description}</p>
-                <p className="mt-1 font-medium">${parseFloat(item.price).toFixed(2)}</p>
+                <p className="mt-1 font-medium">${item.price.toFixed(2)}</p>
               </div>
               <div className="flex gap-2 shrink-0">
                 <Button
@@ -158,7 +158,7 @@ export function SortableMenuItem({
             <div className="flex-1 min-w-0">
               <h3 className="font-semibold truncate">{item.name}</h3>
               <p className="text-sm text-gray-500 line-clamp-1">{item.description}</p>
-              <p className="mt-1 font-medium">${parseFloat(item.price).toFixed(2)}</p>
+              <p className="mt-1 font-medium">${item.price.toFixed(2)}</p>
             </div>
             <div className="flex gap-2 shrink-0">
               <Button

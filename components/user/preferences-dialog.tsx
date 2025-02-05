@@ -131,8 +131,8 @@ export function PreferencesDialog() {
               <div className="flex items-center space-x-2">
                 <Switch
                   id="dark-mode"
-                  checked={preferences?.darkMode || false}
-                  onCheckedChange={(checked) => updatePreferences({ darkMode: checked })}
+                  checked={preferences?.dark_mode || false}
+                  onCheckedChange={(checked) => updatePreferences({ dark_mode: checked })}
                 />
                 <Label htmlFor="dark-mode">Dark Mode</Label>
               </div>

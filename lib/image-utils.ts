@@ -20,12 +20,17 @@ export async function optimizeImage(
   try {
     const formData = new FormData();
     
-    // If input is a Buffer, convert it to a File object
+    // Handle different input types
     if (input instanceof Buffer) {
-      const blob = new Blob([input]);
+      // Convert Buffer to Blob using Uint8Array
+      const uint8Array = new Uint8Array(input);
+      const blob = new Blob([uint8Array], { type: 'image/jpeg' });
       formData.append('image', blob, 'image.jpg');
-    } else {
+    } else if (input instanceof File) {
+      // File is already a Blob, so we can append it directly
       formData.append('image', input);
+    } else {
+      throw new Error('Invalid input type: must be Buffer or File');
     }
 
     const response = await fetch('/api/image', {
@@ -62,12 +67,17 @@ export async function generateThumbnail(
   try {
     const formData = new FormData();
     
-    // If input is a Buffer, convert it to a File object
+    // Handle different input types
     if (input instanceof Buffer) {
-      const blob = new Blob([input]);
+      // Convert Buffer to Blob using Uint8Array
+      const uint8Array = new Uint8Array(input);
+      const blob = new Blob([uint8Array], { type: 'image/jpeg' });
       formData.append('image', blob, 'image.jpg');
-    } else {
+    } else if (input instanceof File) {
+      // File is already a Blob, so we can append it directly
       formData.append('image', input);
+    } else {
+      throw new Error('Invalid input type: must be Buffer or File');
     }
 
     const response = await fetch('/api/image', {

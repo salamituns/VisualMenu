@@ -1,4 +1,6 @@
+// @deno-types="https://deno.land/std@0.177.0/http/server.ts"
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
+// @deno-types="https://esm.sh/@supabase/supabase-js@2.7.1"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1'
 
 const corsHeaders = {
@@ -6,67 +8,39 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+interface RequestBody {
+  userId: string;
+}
+
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
+    // Create Supabase client
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    const { email } = await req.json()
+    // Get the request body
+    const { userId } = (await req.json()) as RequestBody
 
-    // Get user by email
-    const { data: userData, error: userError } = await supabaseClient
-      .from('auth.users')
-      .select('id')
-      .eq('email', email)
-      .single()
-
-    if (userError) {
-      throw userError
+    if (!userId) {
+      throw new Error('userId is required')
     }
 
-    if (!userData) {
-      throw new Error('User not found')
-    }
+    // Update user's role to admin
+    const { error } = await supabaseClient
+      .from('user_roles')
+      .upsert({ user_id: userId, role: 'admin' })
 
-    // Update user's metadata
-    const { error: updateError } = await supabaseClient.auth.admin.updateUserById(
-      userData.id,
-      {
-        user_metadata: {
-          role: 'admin',
-          permissions: [
-            'menu:create',
-            'menu:read',
-            'menu:update',
-            'menu:delete',
-            'orders:create',
-            'orders:read',
-            'orders:update',
-            'analytics:read',
-            'users:manage'
-          ]
-        }
-      }
-    )
-
-    if (updateError) {
-      throw updateError
-    }
-
-    // Create RLS policies
-    const { error: policyError } = await supabaseClient.rpc('create_admin_policies')
-    if (policyError) {
-      throw policyError
-    }
+    if (error) throw error
 
     return new Response(
-      JSON.stringify({ message: 'Admin access granted successfully' }),
+      JSON.stringify({ message: 'Successfully granted admin role' }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,

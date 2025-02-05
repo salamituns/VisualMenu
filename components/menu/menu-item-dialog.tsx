@@ -436,7 +436,7 @@ export function MenuItemDialog({ open, onOpenChange, item, onSuccess }: MenuItem
                       <FormLabel>Image</FormLabel>
                       <FormControl>
                         <ImageUpload
-                          value={field.value}
+                          value={field.value === null ? undefined : field.value}
                           onChange={handleImageUpload}
                           onRemove={handleImageRemove}
                           disabled={isLoading}

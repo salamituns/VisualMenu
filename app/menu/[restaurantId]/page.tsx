@@ -12,8 +12,9 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Utensils, Search, ShoppingCart, Heart } from 'lucide-react'
 import { useInView } from 'react-intersection-observer'
 import { PreferencesDialog } from '@/components/user/preferences-dialog'
-import { useAuth } from '@/lib/context/auth-context'
+import { useAuth, type UserPreferences } from '@/lib/context/auth-context'
 import { cn } from '@/lib/utils'
+import { toast } from 'react-hot-toast'
 
 interface MenuItem {
   name: string
@@ -26,6 +27,10 @@ interface MenuItem {
 interface Category {
   name: string
   items: MenuItem[]
+}
+
+interface CartItem extends MenuItem {
+  quantity?: number;
 }
 
 // Mock data for the menu
@@ -130,15 +135,23 @@ function MenuItemSkeleton() {
 // Lazy loaded menu item component
 function MenuItem({ item, onAddToCart }: { item: MenuItem; onAddToCart: (item: MenuItem) => void }) {
   const { user, preferences, updatePreferences } = useAuth()
-  const isFavorite = preferences?.favorites.includes(item.name)
+  const defaultPreferences: UserPreferences = { dietary: [], favorites: [], dark_mode: false, language: 'en' }
+  const userPreferences = preferences || defaultPreferences
+  const isFavorite = userPreferences.favorites?.includes(item.name) ?? false
 
-  const toggleFavorite = () => {
-    if (!user || !preferences) return
+  const toggleFavorite = (name: string) => {
+    if (!user) {
+      toast.error('Please sign in to save favorites')
+      return
+    }
 
+    const currentFavorites = userPreferences.favorites || []
+    const isFavorite = currentFavorites.includes(name)
+    
     const newFavorites = isFavorite
-      ? preferences.favorites.filter(name => name !== item.name)
-      : [...preferences.favorites, item.name]
-
+      ? currentFavorites.filter((favItem: string) => favItem !== name)
+      : [...currentFavorites, name]
+    
     updatePreferences({ favorites: newFavorites })
   }
 
@@ -148,10 +161,14 @@ function MenuItem({ item, onAddToCart }: { item: MenuItem; onAddToCart: (item: M
   })
 
   // Filter out items that don't match dietary preferences
-  const matchesDietary = !preferences?.dietary.length || 
-    item.dietary?.some(diet => preferences.dietary.includes(diet))
+  const matchesDietary = !userPreferences.dietary?.length || 
+    (item.dietary?.some(diet => userPreferences.dietary?.includes(diet)) ?? false)
 
-  if (preferences?.dietary.length && !matchesDietary) {
+  const handleDietaryChange = (dietary: string[]) => {
+    updatePreferences({ dietary })
+  }
+
+  if (userPreferences.dietary?.length && !matchesDietary) {
     return null
   }
 
@@ -168,14 +185,14 @@ function MenuItem({ item, onAddToCart }: { item: MenuItem; onAddToCart: (item: M
               className="rounded-md object-cover"
               loading="lazy"
               placeholder="blur"
-              blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDABQODxIPDRQSEBIXFRQdHx0fHRsdHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR3/2wBDAR0XFyAeIB4gHh4gIB4dHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAAIAAoDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAb/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+              blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDABQODxIPDRQSEBIXFRQdHx0fHRsdHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR3/2wBDAR0XFyAeIB4gHh4gIB4dHh4eHh4eHh4eHh4eHh4eHh7/wAARCAAIAAoDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAb/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
             />
             {user && (
               <Button
                 variant="ghost"
                 size="icon"
                 className="absolute top-2 right-2 bg-white/80 hover:bg-white"
-                onClick={toggleFavorite}
+                onClick={() => toggleFavorite(item.name)}
               >
                 <Heart
                   className={cn("h-4 w-4", {
@@ -239,12 +256,44 @@ function CategorySection({ category, onAddToCart }: { category: Category; onAddT
   )
 }
 
-export default function MenuPage({ params }: { params: { restaurantId: string } }) {
+type PageProps = {
+  params: Promise<{
+    restaurantId: string
+  }>
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}
+
+export default function MenuPage({
+  params,
+  searchParams,
+}: PageProps) {
   const [loading, setLoading] = useState(true)
+  const [restaurantId, setRestaurantId] = useState<string>('')
+  const [resolvedSearchParams, setResolvedSearchParams] = useState<{ [key: string]: string | string[] | undefined }>({})
   const [searchTerm, setSearchTerm] = useState("")
-  const [cart, setCart] = useState<{ name: string; price: number }[]>([])
+  const [cart, setCart] = useState<CartItem[]>([])
   const [menuData, setMenuData] = useState(menuCategories)
   const { preferences, loading: authLoading } = useAuth()
+  const defaultPreferences: UserPreferences = { dietary: [], favorites: [], dark_mode: false, language: 'en' }
+  const userPreferences = preferences || defaultPreferences
+
+  // Handle async props
+  useEffect(() => {
+    const resolveProps = async () => {
+      const [resolvedParams, resolvedSearch] = await Promise.all([
+        params,
+        searchParams
+      ])
+      setRestaurantId(resolvedParams.restaurantId)
+      setResolvedSearchParams(resolvedSearch)
+      
+      // Initialize search term from URL if present
+      if (resolvedSearch.q) {
+        setSearchTerm(Array.isArray(resolvedSearch.q) ? resolvedSearch.q[0] : resolvedSearch.q)
+      }
+    }
+    resolveProps()
+  }, [params, searchParams])
 
   // Simulate data loading
   useEffect(() => {
@@ -254,24 +303,35 @@ export default function MenuPage({ params }: { params: { restaurantId: string } 
     return () => clearTimeout(timer)
   }, [])
 
-  // Filter menu items based on dietary preferences
-  const filteredMenu = menuData
+  const filteredCategories = menuCategories
     .map(category => ({
       ...category,
       items: category.items.filter(item => {
-        const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.description.toLowerCase().includes(searchTerm.toLowerCase())
-        
-        const matchesDietary = !preferences?.dietary?.length ||
-          item.dietary?.some(diet => preferences.dietary.includes(diet))
+        const matchesSearch = searchTerm
+          ? item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            item.description.toLowerCase().includes(searchTerm.toLowerCase())
+          : true
+
+        const matchesDietary = !userPreferences.dietary?.length ||
+          (item.dietary?.some(diet => userPreferences.dietary?.includes(diet)) ?? false)
 
         return matchesSearch && matchesDietary
-      })
+      }),
     }))
     .filter(category => category.items.length > 0)
 
-  const addToCart = (item: { name: string; price: number }) => {
-    setCart([...cart, item])
+  const addToCart = (item: MenuItem) => {
+    setCart(prev => {
+      const existingItem = prev.find(cartItem => cartItem.name === item.name)
+      if (existingItem) {
+        return prev.map(cartItem =>
+          cartItem.name === item.name
+            ? { ...cartItem, quantity: (cartItem.quantity || 1) + 1 }
+            : cartItem
+        )
+      }
+      return [...prev, { ...item, quantity: 1 }]
+    })
   }
 
   if (loading || authLoading) {
@@ -316,7 +376,9 @@ export default function MenuPage({ params }: { params: { restaurantId: string } 
         <div className="flex items-center justify-between max-w-3xl mx-auto">
           <div className="flex items-center space-x-2">
             <Utensils className="h-6 w-6" />
-            <h1 className="text-xl font-bold">Restaurant Name</h1>
+            <h1 className="text-xl font-bold">
+              {restaurantId ? `Restaurant ${restaurantId}` : 'Loading...'}
+            </h1>
           </div>
           <div className="flex items-center space-x-2">
             <PreferencesDialog />
@@ -346,10 +408,10 @@ export default function MenuPage({ params }: { params: { restaurantId: string } 
             />
           </div>
 
-          <Tabs defaultValue={filteredMenu[0]?.name} className="w-full">
+          <Tabs defaultValue={filteredCategories[0]?.name} className="w-full">
             <ScrollArea className="w-full">
               <TabsList className="w-full justify-start">
-                {filteredMenu.map((category) => (
+                {filteredCategories.map((category) => (
                   <TabsTrigger key={category.name} value={category.name}>
                     {category.name}
                   </TabsTrigger>
@@ -357,7 +419,7 @@ export default function MenuPage({ params }: { params: { restaurantId: string } 
               </TabsList>
             </ScrollArea>
 
-            {filteredMenu.map((category) => (
+            {filteredCategories.map((category) => (
               <CategorySection
                 key={category.name}
                 category={category}
