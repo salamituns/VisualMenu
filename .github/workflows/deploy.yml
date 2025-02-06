@@ -8,7 +8,9 @@ on:
 jobs:
   deploy-staging:
     runs-on: ubuntu-latest
-    environment: staging
+    environment:
+      name: staging
+      url: ${{ steps.deploy.outputs.url }}
     
     steps:
     - uses: actions/checkout@v3
@@ -29,17 +31,21 @@ jobs:
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
     
     - name: Deploy to Vercel
+      id: deploy
       uses: amondnet/vercel-action@v20
       with:
         vercel-token: ${{ secrets.VERCEL_TOKEN }}
         vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
         vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-        vercel-args: '--prod'
+        vercel-args: '--prebuilt --prod'
+        scope: ${{ secrets.VERCEL_ORG_ID }}
 
   deploy-production:
     needs: deploy-staging
     runs-on: ubuntu-latest
-    environment: production
+    environment:
+      name: production
+      url: ${{ steps.deploy-prod.outputs.url }}
     
     steps:
     - uses: actions/checkout@v3
@@ -59,10 +65,12 @@ jobs:
         NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
     
-    - name: Deploy to Vercel
+    - name: Deploy to Vercel (Production)
+      id: deploy-prod
       uses: amondnet/vercel-action@v20
       with:
         vercel-token: ${{ secrets.VERCEL_TOKEN }}
         vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
         vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-        vercel-args: '--prod' 
+        vercel-args: '--prebuilt --prod'
+        scope: ${{ secrets.VERCEL_ORG_ID }} 
