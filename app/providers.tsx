@@ -4,7 +4,6 @@ import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/toaster'
 import { AuthProvider } from '@/lib/context/auth-context'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { FixedThemeToggle } from '@/components/fixed-theme-toggle'
 import { queryClient } from '@/lib/react-query'
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -17,7 +16,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
           enableSystem
           disableTransitionOnChange
         >
-          <FixedThemeToggle />
           {children}
           <Toaster />
         </ThemeProvider>

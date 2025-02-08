@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Icons } from '@/components/ui/icons'
 import { useAuth } from '@/lib/context/auth-context'
+import { ThemeToggle } from '@/components/theme-toggle'
 
 interface NavItem {
   title: string
@@ -113,6 +114,9 @@ export default function DashboardLayout({
             >
               <Icons.menu className="h-4 w-4" />
             </Button>
+            <div className="ml-auto flex items-center gap-4">
+              <ThemeToggle />
+            </div>
           </div>
         </header>
         <main className="container mx-auto p-4 lg:p-8">
