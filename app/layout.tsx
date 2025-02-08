@@ -6,7 +6,7 @@ import { Providers } from './providers'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Visual Menu',
+  title: 'MenuViz',
   description: 'Create beautiful digital menus for your restaurant',
 }
 

@@ -124,8 +124,11 @@ export default function MenuPage() {
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-16 items-center">
+        <div className="container flex h-16 items-center justify-between">
           <h1 className="text-2xl font-bold">Our Menu</h1>
+          <div className="text-sm text-muted-foreground">
+            Powered by MenuViz
+          </div>
         </div>
       </header>
       
@@ -317,8 +320,11 @@ function MenuSkeleton() {
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-16 items-center">
-          <Skeleton className="h-8 w-32" />
+        <div className="container flex h-16 items-center justify-between">
+          <h1 className="text-2xl font-bold">Our Menu</h1>
+          <div className="text-sm text-muted-foreground">
+            Powered by MenuViz
+          </div>
         </div>
       </header>
       

@@ -58,7 +58,7 @@ export default function DashboardLayout({
         <div className="flex h-16 items-center justify-between border-b px-4">
           <Link href="/dashboard" className="flex items-center gap-2">
             <Icons.logo className="h-6 w-6" />
-            <span className="font-bold">Visual Menu</span>
+            <span className="font-bold">MenuViz</span>
           </Link>
           <Button
             variant="ghost"

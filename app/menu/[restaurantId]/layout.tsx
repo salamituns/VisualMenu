@@ -13,7 +13,7 @@ export async function generateMetadata(
   const resolvedParams = await params
   
   return {
-    title: `Menu - Restaurant ${resolvedParams.restaurantId}`,
+    title: `Menu - ${resolvedParams.restaurantId} | Powered by MenuViz`,
     description: 'View our delicious menu items',
   }
 }
