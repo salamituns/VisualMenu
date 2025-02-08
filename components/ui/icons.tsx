@@ -18,13 +18,14 @@ import {
   List,
   Trash,
   Copy,
+  Utensils,
   type LucideIcon,
 } from 'lucide-react'
 
 export type Icon = LucideIcon
 
 export const Icons = {
-  logo: Command,
+  logo: Utensils,
   close: X,
   spinner: Loader2,
   chevronLeft: ChevronLeft,
