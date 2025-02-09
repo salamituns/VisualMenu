@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DIETARY_ICONS, DIETARY_LABELS } from '@/types/menu'
+import { ThemeToggle } from '@/components/theme-toggle'
 
 interface MenuItem {
   id: string
@@ -126,8 +127,11 @@ export default function MenuPage() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-16 items-center justify-between">
           <h1 className="text-2xl font-bold">Our Menu</h1>
-          <div className="text-sm text-muted-foreground">
-            Powered by MenuViz
+          <div className="flex items-center gap-4">
+            <ThemeToggle />
+            <div className="text-sm text-muted-foreground">
+              Powered by MenuViz
+            </div>
           </div>
         </div>
       </header>

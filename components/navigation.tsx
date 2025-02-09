@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { Button } from "@/components/ui/button"
 import { Utensils } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { ThemeToggle } from './theme-toggle'
 
 export function Navigation() {
   const pathname = usePathname()
@@ -48,7 +49,7 @@ export function Navigation() {
         <Utensils className="h-6 w-6 mr-2" />
         <span className="font-bold">MenuViz</span>
       </Link>
-      <nav className="ml-auto flex gap-4 sm:gap-6">
+      <nav className="ml-auto flex items-center gap-4 sm:gap-6">
         <Link 
           className="text-sm font-medium hover:underline underline-offset-4" 
           href="#"
@@ -73,6 +74,7 @@ export function Navigation() {
         >
           Contact
         </Link>
+        <ThemeToggle />
         {user ? (
           <>
             <Link href="/dashboard">
