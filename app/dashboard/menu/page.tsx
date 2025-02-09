@@ -1,106 +1,65 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Icons } from '@/components/ui/icons'
-import { createClient } from '@/lib/supabase/client'
-import { MenuItem, Category } from '@/types/menu'
-import { MenuItemDialog } from '@/components/menu/menu-item-dialog'
-import { MenuItemList } from '@/components/menu/menu-item-list'
-import { CategoryDialog } from '@/components/menu/category-dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MenuItemList } from '@/components/menu/menu-item-list'
 import { CategoryList } from '@/components/menu/category-list'
-import { queryClient } from '@/lib/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { createClient } from '@/lib/supabase/client'
+import { MenuScanner } from '@/components/ocr/MenuScanner'
+import { ResultsPreview } from '@/components/ocr/ResultsPreview'
+import { Dialog, DialogContent } from '@/components/ui/modal'
+import { useToast } from '@/components/ui/use-toast'
+import { Camera } from 'lucide-react'
+
+interface MenuItem {
+  id: string
+  name: string
+  description: string
+  price: number
+  category_id: string
+  image_url: string | null
+  is_available: boolean
+  dietary_info: string[]
+  created_at: string
+  updated_at: string
+}
+
+interface Category {
+  id: string
+  name: string
+  description: string | null
+  order_index: number
+}
 
 export default function MenuPage() {
   const [isMenuItemDialogOpen, setIsMenuItemDialogOpen] = useState(false)
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false)
+  const [isOCRDialogOpen, setIsOCRDialogOpen] = useState(false)
+  const [scannedItems, setScannedItems] = useState<Array<{
+    name: string;
+    description?: string;
+    price: number;
+    category?: string;
+  }> | null>(null)
+  
   const supabase = createClient()
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
 
   const { data: items, isLoading: isLoadingItems } = useQuery<MenuItem[]>({
     queryKey: ['menu-items'],
     queryFn: async () => {
-      try {
-        // First, get menu items with all fields explicitly specified
-        const { data: menuItems, error: menuError } = await supabase
-          .from('menu_items')
-          .select(`
-            id,
-            name,
-            description,
-            price,
-            category_id,
-            image_url,
-            image_path,
-            is_available,
-            dietary_info,
-            created_at,
-            updated_at
-          `)
-          .order('name', { ascending: true })
+      const { data, error } = await supabase
+        .from('menu_items')
+        .select('*')
+        .order('created_at', { ascending: false })
 
-        if (menuError) {
-          console.error('Menu items fetch error:', menuError)
-          throw menuError
-        }
-
-        // Then get portion sizes for each menu item
-        const menuItemsWithRelations = await Promise.all(
-          (menuItems || []).map(async (item) => {
-            const { data: portionSizes } = await supabase
-              .from('portion_sizes')
-              .select('*')
-              .eq('menu_item_id', item.id)
-
-            const { data: customizationOptions } = await supabase
-              .from('customization_options')
-              .select(`
-                id, name, price_adjustment, max_selections, is_required, menu_item_id
-              `)
-              .eq('menu_item_id', item.id)
-
-            if (customizationOptions) {
-              // Get choices for each customization option
-              const optionsWithChoices = await Promise.all(
-                customizationOptions.map(async (option) => {
-                  const { data: choices } = await supabase
-                    .from('customization_choices')
-                    .select('*')
-                    .eq('option_id', option.id)
-
-                  return {
-                    ...option,
-                    choices: choices || []
-                  }
-                })
-              )
-
-              return {
-                ...item,
-                dietary_info: item.dietary_info || [], // Ensure dietary_info is always an array
-                portion_sizes: portionSizes || [],
-                customization_options: optionsWithChoices
-              }
-            }
-
-            return {
-              ...item,
-              dietary_info: item.dietary_info || [], // Ensure dietary_info is always an array
-              portion_sizes: portionSizes || [],
-              customization_options: []
-            }
-          })
-        )
-
-        return menuItemsWithRelations
-      } catch (error) {
-        console.error('Error fetching menu items:', error)
-        throw error
-      }
+      if (error) throw error
+      return data
     },
-    staleTime: 1000,
-    refetchOnWindowFocus: true,
   })
 
   const { data: categories, isLoading: isLoadingCategories } = useQuery<Category[]>({
@@ -111,15 +70,103 @@ export default function MenuPage() {
         .select('*')
         .order('order_index', { ascending: true })
 
-      if (error) {
-        console.error('Error fetching categories:', error)
-        throw error
-      }
-      return data || []
+      if (error) throw error
+      return data
     },
-    staleTime: 1000,
-    refetchOnWindowFocus: true,
   })
+
+  const handleScanComplete = (items: Array<{
+    name: string;
+    description?: string;
+    price: number;
+    category?: string;
+  }>) => {
+    setScannedItems(items)
+  }
+
+  const handleScanError = (error: Error) => {
+    toast({
+      title: 'Scan failed',
+      description: error.message,
+      variant: 'destructive',
+    })
+    setIsOCRDialogOpen(false)
+  }
+
+  const handleConfirmScannedItems = async (items: Array<{
+    name: string;
+    description?: string;
+    price: number;
+    category?: string;
+  }>) => {
+    try {
+      // First, ensure all categories exist
+      const categoryPromises = items
+        .filter(item => item.category)
+        .map(async (item) => {
+          if (!item.category) return
+
+          const { data: existingCategory } = await supabase
+            .from('categories')
+            .select('id')
+            .eq('name', item.category)
+            .single()
+
+          if (!existingCategory) {
+            const { data: newCategory, error } = await supabase
+              .from('categories')
+              .insert([
+                {
+                  name: item.category,
+                  order_index: 0,
+                },
+              ])
+              .select()
+              .single()
+
+            if (error) throw error
+            return newCategory
+          }
+
+          return existingCategory
+        })
+
+      await Promise.all(categoryPromises)
+
+      // Then insert menu items
+      const { error } = await supabase.from('menu_items').insert(
+        items.map(item => ({
+          name: item.name,
+          description: item.description || '',
+          price: item.price,
+          category_id: item.category || null,
+          is_available: true,
+          dietary_info: [],
+        }))
+      )
+
+      if (error) throw error
+
+      // Refresh the data
+      queryClient.invalidateQueries({ queryKey: ['menu-items'] })
+      queryClient.invalidateQueries({ queryKey: ['categories'] })
+
+      toast({
+        title: 'Items added successfully',
+        description: `Added ${items.length} items to your menu`,
+      })
+
+      setScannedItems(null)
+      setIsOCRDialogOpen(false)
+    } catch (error) {
+      console.error('Error adding scanned items:', error)
+      toast({
+        title: 'Failed to add items',
+        description: 'There was an error adding the scanned items to your menu',
+        variant: 'destructive',
+      })
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -138,18 +185,24 @@ export default function MenuPage() {
             <TabsTrigger value="items">Menu Items</TabsTrigger>
             <TabsTrigger value="categories">Categories</TabsTrigger>
           </TabsList>
-          <TabsContent value="items" className="mt-0">
-            <Button onClick={() => setIsMenuItemDialogOpen(true)}>
-              <Icons.add className="mr-2 h-4 w-4" />
-              Add Item
+          <div className="flex items-center gap-2">
+            <Button onClick={() => setIsOCRDialogOpen(true)}>
+              <Camera className="mr-2 h-4 w-4" />
+              Scan Menu
             </Button>
-          </TabsContent>
-          <TabsContent value="categories" className="mt-0">
-            <Button onClick={() => setIsCategoryDialogOpen(true)}>
-              <Icons.add className="mr-2 h-4 w-4" />
-              Add Category
-            </Button>
-          </TabsContent>
+            <TabsContent value="items" className="mt-0">
+              <Button onClick={() => setIsMenuItemDialogOpen(true)}>
+                <Icons.add className="mr-2 h-4 w-4" />
+                Add Item
+              </Button>
+            </TabsContent>
+            <TabsContent value="categories" className="mt-0">
+              <Button onClick={() => setIsCategoryDialogOpen(true)}>
+                <Icons.add className="mr-2 h-4 w-4" />
+                Add Category
+              </Button>
+            </TabsContent>
+          </div>
         </div>
 
         <TabsContent value="items" className="mt-0">
@@ -166,19 +219,31 @@ export default function MenuPage() {
           <CategoryList categories={categories ?? []} isLoading={isLoadingCategories} />
         </TabsContent>
       </Tabs>
-      
-      <MenuItemDialog
-        open={isMenuItemDialogOpen}
-        onOpenChange={setIsMenuItemDialogOpen}
-        onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ['menu-items'] })
-        }}
-      />
 
-      <CategoryDialog
-        open={isCategoryDialogOpen}
-        onOpenChange={setIsCategoryDialogOpen}
-      />
+      <Dialog open={isOCRDialogOpen} onOpenChange={setIsOCRDialogOpen}>
+        <DialogContent className="max-w-3xl">
+          {scannedItems ? (
+            <ResultsPreview
+              results={scannedItems}
+              onConfirm={handleConfirmScannedItems}
+              onEdit={(index, item) => {
+                const newItems = [...scannedItems]
+                newItems[index] = item
+                setScannedItems(newItems)
+              }}
+              onCancel={() => {
+                setScannedItems(null)
+                setIsOCRDialogOpen(false)
+              }}
+            />
+          ) : (
+            <MenuScanner
+              onScanComplete={handleScanComplete}
+              onError={handleScanError}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 } 
