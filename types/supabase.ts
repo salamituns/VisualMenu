@@ -12,76 +12,96 @@ export interface Database {
       menu_items: {
         Row: {
           id: string
-          name: string
-          price: number
-          description: string | null
-          category_id: string | null
           created_at: string
-          updated_at: string | null
+          updated_at: string
+          name: string
+          description: string
+          price: number
+          image_url: string | null
+          category_id: string
+          is_available: boolean
+          dietary_info: string[]
         }
         Insert: {
           id?: string
-          name: string
-          price: number
-          description?: string | null
-          category_id?: string | null
           created_at?: string
-          updated_at?: string | null
+          updated_at?: string
+          name: string
+          description: string
+          price: number
+          image_url?: string | null
+          category_id: string
+          is_available?: boolean
+          dietary_info?: string[]
         }
         Update: {
           id?: string
+          created_at?: string
+          updated_at?: string
           name?: string
+          description?: string
           price?: number
+          image_url?: string | null
+          category_id?: string
+          is_available?: boolean
+          dietary_info?: string[]
+        }
+      }
+      categories: {
+        Row: {
+          id: string
+          created_at: string
+          updated_at: string
+          name: string
+          description: string | null
+          order_index: number
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          updated_at?: string
+          name: string
           description?: string | null
-          category_id?: string | null
-          created_at?: string
-          updated_at?: string | null
-        }
-      }
-      orders: {
-        Row: {
-          id: string
-          menu_item_id: string
-          quantity: number
-          created_at: string
-          updated_at: string | null
-          menu_item?: {
-            name: string
-            price: number
-          } | null
-        }
-        Insert: {
-          id?: string
-          menu_item_id: string
-          quantity: number
-          created_at?: string
-          updated_at?: string | null
-        }
-        Update: {
-          id?: string
-          menu_item_id?: string
-          quantity?: number
-          created_at?: string
-          updated_at?: string | null
-        }
-      }
-      customers: {
-        Row: {
-          id: string
-          created_at: string
-          updated_at: string | null
-        }
-        Insert: {
-          id?: string
-          created_at?: string
-          updated_at?: string | null
+          order_index?: number
         }
         Update: {
           id?: string
           created_at?: string
-          updated_at?: string | null
+          updated_at?: string
+          name?: string
+          description?: string | null
+          order_index?: number
         }
       }
+      views: {
+        Row: {
+          id: string
+          created_at: string
+          page: string
+          user_id: string | null
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          page: string
+          user_id?: string | null
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          page?: string
+          user_id?: string | null
+        }
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      [_ in never]: never
+    }
+    Enums: {
+      [_ in never]: never
     }
   }
 } 
