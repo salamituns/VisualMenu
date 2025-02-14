@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "regions": ["iad1"],
+  "env": {
+    "NEXT_PUBLIC_SUPABASE_URL": "env var from supabase",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "env var from supabase",
+    "NEXT_PUBLIC_AZURE_FORM_ENDPOINT": "env var from azure",
+    "NEXT_PUBLIC_AZURE_FORM_KEY": "env var from azure",
+    "NEXT_PUBLIC_AZURE_CV_KEY": "env var from azure",
+    "NEXT_PUBLIC_AZURE_CV_ENDPOINT": "env var from azure"
+  }
+} 
